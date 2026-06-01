@@ -1,81 +1,214 @@
 # AI Agent Skills for Claude Code
 
-Global slash commands for building, operating, and improving AI agents in production apps. Works with any Next.js + Vercel AI SDK + Drizzle/Postgres project.
+> Slash commands for building and operating production AI agents. Each skill is a step in a lifecycle — scaffold, instrument, improve, debug, test.
 
-## Install
-
-**All 7 skills:**
 ```bash
 npx skills add stevetowers08/ai-agent-skills
 ```
 
-**Single skill:**
-```bash
-npx skills add stevetowers08/ai-agent-skills --skill ai-agent-create-solo
-```
+---
+
+## The idea
+
+Building an AI agent involves the same steps every time: define its identity, wire its tools, instrument it so you can see what it's doing, give it a memory it can accumulate learnings into, and build a test harness so changes don't break it silently.
+
+These skills encode that lifecycle as Claude Code slash commands. Each one does one job well. They're designed to compose — you run them in order, and by the end you have a production-grade agent with identity, memory, observability, a self-improvement loop, and a regression suite.
+
+The stack is opinionated: **Next.js + Vercel AI SDK + Drizzle + Postgres + OpenTelemetry + Langfuse**. If you're on a different stack, the identity/memory patterns still apply — only the code generation parts need adapting.
+
+---
 
 ## Skills
 
 ### Build
 
-| Command | What it does |
-|---|---|
-| `/ai-agent-create-solo` | Scaffold a complete individual agent — SOUL.md, MEMORY.md, .learnings/, tool registry, Vercel AI SDK loop, Drizzle run-trace schema |
-| `/ai-agent-create-team` | Wire a supervisor + worker team with delegation protocol, handoff, and OTel parent-child span nesting |
-| `/ai-agent-create-workflow` | Build a scheduled multi-step pipeline with Zod step schemas, branching, retries, checkpoints, and cron trigger via routines table |
+**`/ai-agent-create-solo`** — Scaffold a complete individual agent from scratch.
+
+Writes every file the agent needs to be runnable: a `SOUL.md` identity file (role, behavioral principles, cost policy), a `MEMORY.md` with a strict 800-token cap, a `.learnings/` directory for accumulating errors and corrections, a `TOOLS.md` registry documenting each tool and its known quirks, and the agent loop itself in TypeScript using the Vercel AI SDK's `generateText` with a 3-tier prompt (stable identity + tool docs stay cache-warm across runs; fresh memory snapshot injected per run). Also writes the Drizzle run-trace schema so every execution is logged to Postgres with token counts and cost.
+
+The 3-tier prompt matters: Anthropic's prompt cache preserves the prefix. Putting stable content (SOUL.md + TOOLS.md) first means the expensive context is cached across thousands of runs. Only the volatile memory tier (MEMORY.md, current task) changes each call.
+
+```
+agents/<name>/
+  SOUL.md          # Who the agent is, what it will and won't do
+  MEMORY.md        # Cross-run context, capped at 800 tokens
+  TOOLS.md         # Tool registry with gotchas and error patterns
+  .learnings/
+    LEARNINGS.md   # Accumulated corrections and insights
+    ERRORS.md      # Failure log with reproducibility status
+    FEATURE_REQUESTS.md
+
+src/agents/<name>/
+  index.ts         # generateText loop, tool definitions, run logging
+
+db/schema/
+  agent_runs.ts    # id, agentName, status, tokensIn, tokensOut, costUsd, actionTaken, errorMsg
+```
+
+---
+
+**`/ai-agent-create-team`** — Wire a supervisor + worker agent team.
+
+The supervisor receives a task and breaks it into subtasks, each delegated to a specialist worker via a `delegate_task` tool. Workers are individual agents (each with their own SOUL.md and memory). OTel spans nest so the full team execution is visible as a single trace tree in Langfuse — you can see the supervisor call, each worker span, which tools each worker used, and how long each step took.
+
+Asks upfront whether workers run sequentially or in parallel, and whether the supervisor receives the full worker message history or just the final result (default: last message only — avoids context bloat on the supervisor side).
+
+```
+agents/<team>/
+  AGENTS.md            # Team topology: who does what, delegation rules
+  supervisor/
+    SOUL.md            # Supervisor identity and coordination rules
+    MEMORY.md
+  <worker-name>/
+    SOUL.md            # Worker specialist identity
+    MEMORY.md
+    TOOLS.md
+
+src/agents/<team>/
+  supervisor.ts        # delegate_task tool + OTel parent span
+  <worker-name>.ts     # Worker loop accepting parentSpan for trace nesting
+```
+
+---
+
+**`/ai-agent-create-workflow`** — Build a scheduled multi-step pipeline.
+
+Workflows are different from agents: no conversation loop, no tool autonomy. A workflow is a linear (or branching) pipeline of typed steps that runs on a cron schedule. Each step's input and output is validated with Zod — if a step produces the wrong shape, the workflow fails fast rather than passing bad data downstream.
+
+Writes the workflow file, the `routines` + `routine_runs` Drizzle tables, and a Next.js Route Handler trigger endpoint. The routines table uses a `coalesce_if_active` concurrency policy by default — if the cron fires while a run is still active, it skips rather than stacking.
+
+```
+src/workflows/<name>.ts     # createWorkflowChain with typed steps, branching, retries
+db/schema/routines.ts       # routines + routineRuns tables
+app/api/workflows/<name>/
+  trigger/route.ts          # POST endpoint for manual + cron triggering
+```
+
+---
 
 ### Operate
 
-| Command | What it does |
-|---|---|
-| `/ai-agent-add-observability` | Instrument agents with OTel BatchSpanProcessor → Langfuse, token cost tracking, and SSE live event feed |
-| `/ai-agent-debug-run` | Diagnose failing agent by category (bad tool call, context overflow, prompt drift, retry storm), apply fix, log to ERRORS.md |
+**`/ai-agent-add-observability`** — Instrument an existing agent with OTel tracing, cost tracking, and a live event feed.
+
+One-time setup per project. Writes `src/lib/tracing.ts` as a singleton that initialises an OTel `BatchSpanProcessor` pointing at a Langfuse self-hosted instance (or any OTLP-compatible endpoint — swap the env var). Adds three span types: `agent_invocation` (the full run), `llm_call` (each model call with `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens`), and `tool_execution` (each tool call with duration and result status).
+
+Also writes an SSE Route Handler (`/api/agents/stream`) with a 30-second heartbeat so a dashboard can subscribe to live agent events without polling. Cost rates are baked in per model so the tracing layer computes `costUsd` on every span.
+
+No third-party SaaS required — Langfuse runs in Docker with a two-container compose file.
+
+---
+
+**`/ai-agent-debug-run`** — Diagnose a failing agent by category, fix it, log the root cause.
+
+The Iron Law: identify root cause before touching any code. This skill reads run traces and error logs first, then maps the failure to one of eight categories — bad tool call, context overflow, prompt drift, retry storm, tool error (external), suspension not resumed, schema mismatch, cost abort. Each category has a specific fix path.
+
+The most common failure modes and what they actually mean:
+
+- **Context overflow** (`tokensIn > 80%`): the agent is reading too much on each run — compact MEMORY.md, strip stale LEARNINGS entries from the system prompt
+- **Retry storm**: `maxSteps` set too high with no result-check logic — the agent calls the same tool repeatedly because it doesn't know the previous call worked
+- **Prompt drift**: SOUL.md is too vague and the agent is improvising outside its role — tighten behavioral rules with specific prohibitions
+
+Logs a structured entry to `ERRORS.md` after every debug session so the pattern is captured for promotion.
+
+---
 
 ### Improve
 
-| Command | What it does |
-|---|---|
-| `/ai-agent-compact-memory` | Compact MEMORY.md to under 800 tokens, promote recurring learnings to SOUL.md / TOOLS.md / global CLAUDE.md |
-| `/ai-agent-create-evals` | Build a golden-trace eval harness — extract fixtures from run history, write typed runner, score tool sequence + output shape |
+**`/ai-agent-compact-memory`** — Trim MEMORY.md to under 800 tokens and promote durable learnings to permanent files.
 
-## Recommended flow
+The 800-token cap on MEMORY.md isn't arbitrary — it's the point where the Anthropic prompt cache prefix can be preserved across runs. Beyond that, the cache breaks and you pay for the full context on every call.
+
+Compaction works in two passes: first, deduplicate and summarise volatile memory (things that are no longer current); second, scan LEARNINGS.md for entries with `Recurrence-Count >= 3` seen across two or more distinct tasks in the last 30 days — those get promoted to SOUL.md (behavioral rules), TOOLS.md (tool gotchas), or global CLAUDE.md (project-wide facts). The promoted entries are distilled into one-line prevention rules, not verbose incident descriptions.
+
+Creates a dated snapshot at `agents/<name>/memory/YYYY-MM-DD.md` before compacting so history isn't lost.
+
+---
+
+**`/ai-agent-self-improving`** — Add a feedback loop so the agent gets better over time.
+
+Two patterns in one skill — use one or both depending on whether the agent's outputs produce measurable real-world results.
+
+**Learning Capture** (any agent): Initialises the `.learnings/` directory with structured log files. Defines when to log (tool errors, user corrections, outdated knowledge, capability gaps), the entry format (`LRN-YYYYMMDD-XXX` with Pattern-Key for deduplication), and the promotion rules (Recurrence-Count >= 3, 2+ tasks, 30-day window → promote to SOUL.md / TOOLS.md / CLAUDE.md as a distilled prevention rule).
+
+**Performance Observer** (agents with measurable outputs): A small scheduled agent that watches an external performance signal — email reply rates, CRM conversion, engagement metrics, support resolution times, sales win rates, whatever your agent produces that you can measure. Fetches the signal data, splits into top and bottom performers, sends to Claude Haiku for pattern analysis, and saves a structured insight summary to the database. The main agent reads this summary at generation time and injects it as a context block before running.
+
+The observer is separate from the main agent: it runs on a cadence matched to how fast your signal changes (weekly for content, daily for outreach, hourly for support). The insight summary is grounded in specific examples from the data — "emails under 80 words with a concrete question get 3x more replies" is grounded; "be more concise" is not. Based on the Reflexion architecture (Shinn et al., NeurIPS 2023), adapted for external performance signals rather than internal tool feedback.
+
+---
+
+**`/ai-agent-create-evals`** — Build a golden-trace eval harness from real run history.
+
+Extracts 3-5 successful runs and 1-2 known failure runs from the `agent_runs` table, writes them as typed JSON fixtures, and generates a runner that replays each fixture and scores four dimensions: tool call sequence (right tools, roughly right order), output shape (matches expected Zod schema), no-hallucination (didn't fabricate when it should have stopped), and cost bounds (stayed within expected token budget).
+
+Agent evals don't test exact output — LLMs are non-deterministic. They test behavioral patterns. A regression is when the agent starts calling the wrong tool, producing a different shape, or hallucinating results it used to stop on.
 
 ```
-/ai-agent-create-solo       ← scaffold
-/ai-agent-add-observability ← instrument (run once per project)
-                            ← run it, collect traces
-/ai-agent-debug-run         ← fix issues
-/ai-agent-compact-memory    ← weekly memory hygiene
-/ai-agent-create-evals      ← before any breaking change
+evals/<agent-name>/
+  fixtures/
+    <scenario>.json    # input + expected.toolSequence + expected.outputShape + expected.maxTokensIn
+  runner.ts            # executes fixtures, scores, reports pass/fail
 ```
+
+Adds `npm run eval:<name>` to package.json so evals run in CI.
+
+---
+
+## Recommended sequence
+
+```
+/ai-agent-create-solo           # scaffold
+/ai-agent-add-observability     # instrument (once per project)
+                                # run it, collect real traces
+/ai-agent-debug-run             # fix issues using trace evidence
+/ai-agent-self-improving        # add feedback loop
+/ai-agent-compact-memory        # weekly — keep memory from bloating
+/ai-agent-create-evals          # before any breaking change
+```
+
+For teams:
+
+```
+/ai-agent-create-team           # supervisor + workers
+/ai-agent-add-observability     # nested trace tree across all agents
+/ai-agent-create-evals          # eval at the supervisor level (input → final output)
+```
+
+For scheduled pipelines:
+
+```
+/ai-agent-create-workflow       # typed steps, cron trigger, concurrency policy
+/ai-agent-add-observability     # instrument each step as a span
+/ai-agent-self-improving        # performance observer if steps produce measurable outputs
+```
+
+---
+
+## Install a single skill
+
+```bash
+npx skills add stevetowers08/ai-agent-skills --skill ai-agent-create-solo
+npx skills add stevetowers08/ai-agent-skills --skill ai-agent-create-team
+npx skills add stevetowers08/ai-agent-skills --skill ai-agent-create-workflow
+npx skills add stevetowers08/ai-agent-skills --skill ai-agent-add-observability
+npx skills add stevetowers08/ai-agent-skills --skill ai-agent-debug-run
+npx skills add stevetowers08/ai-agent-skills --skill ai-agent-compact-memory
+npx skills add stevetowers08/ai-agent-skills --skill ai-agent-self-improving
+npx skills add stevetowers08/ai-agent-skills --skill ai-agent-create-evals
+```
+
+---
 
 ## Stack
 
 - **Runtime:** Vercel AI SDK (`ai` package) + `@ai-sdk/anthropic`
 - **Database:** Drizzle ORM + Postgres
-- **Observability:** OpenTelemetry + Langfuse (self-hosted)
+- **Observability:** OpenTelemetry + Langfuse (self-hosted Docker)
 - **Language:** TypeScript strict mode
+- **Framework:** Next.js App Router (Route Handlers for triggers and SSE)
 
-## Agent file structure
+The patterns work on other stacks — swap the code generation but keep the file structure and lifecycle.
 
-```
-agents/
-  <name>/
-    SOUL.md          # Identity, behavioral rules, cost policy
-    MEMORY.md        # Cross-session context (max 800 tokens)
-    TOOLS.md         # Tool registry and known gotchas
-    .learnings/
-      LEARNINGS.md   # Accumulated insights
-      ERRORS.md      # Failure log
-      FEATURE_REQUESTS.md
-
-src/agents/<name>/
-  index.ts           # Agent loop (3-tier prompt, tool registry, run logging)
-
-db/schema/
-  agent_runs.ts      # Run trace table (Drizzle)
-  routines.ts        # Cron scheduling tables (for workflows)
-```
+---
 
 ## License
 
