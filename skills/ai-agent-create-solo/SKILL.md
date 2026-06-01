@@ -1,33 +1,39 @@
 ---
 name: ai-agent-create-solo
-description: Scaffold a complete individual AI agent from scratch — identity file (SOUL.md), persistent memory, learnings directory, tool registry, Vercel AI SDK agent loop, and Drizzle run-trace schema. Use this skill whenever the user wants to create a new agent, build an AI agent, add an agent to their app, or scaffold any kind of autonomous AI worker. Triggers on: "create an agent", "build an agent for X", "add an AI agent", "scaffold an agent", "new agent that does X", "I want an agent to handle Y".
+description: Scaffold a complete individual AI agent from scratch — identity file (SOUL.md), persistent memory, learnings directory, tool registry, agent loop, and run-trace schema. Use this skill whenever the user wants to create a new agent, build an AI agent, add an agent to their app, or scaffold any kind of autonomous AI worker. Triggers on: "create an agent", "build an agent for X", "add an AI agent", "scaffold an agent", "new agent that does X", "I want an agent to handle Y".
 ---
 
 # ai-agent-create-solo
 
-Scaffold a production-ready individual agent. This skill writes real files — identity, memory, learnings, tools, the agent loop, and database schema. By the end, the agent is runnable.
-
-## Stack assumptions
-
-- Next.js + Vercel AI SDK (`ai` package) for the agent loop
-- Drizzle ORM + Postgres for run tracing
-- TypeScript strict mode
-- Files live under `agents/<name>/` (identity/memory) and `src/agents/<name>/` (code)
-
-If the project uses a different stack, adapt the code generation but keep the file structure.
+Scaffold a production-ready individual agent. This skill writes every file the agent needs to be runnable: identity, memory, learnings, tools, the agent loop, and database schema for run tracing.
 
 ## Step 1 — Gather inputs
 
-Ask these questions. Ask them all at once in a single message, not one at a time.
+Ask these questions all at once in a single message:
 
 1. **Agent name** — snake_case, becomes the directory name (e.g. `lead_enricher`)
 2. **Role** — one sentence: what does this agent do and why does it exist?
-3. **Tools** — list the tools it needs (e.g. web search, email send, database read). If unsure, ask for the agent's actions and infer the tools.
+3. **Tools** — what does it need to do? (e.g. search the web, send email, read a database). List actions; infer the tools.
 4. **Trigger** — on-demand (called from code) or scheduled (cron)?
 5. **Model** — which Claude model? Default: `claude-sonnet-4-6`
-6. **Token budget** — max tokens per run before abort. Default: 50000
+6. **Token budget** — max tokens per run before abort. Default: 50,000
 
-## Step 2 — Write identity and memory files
+## Step 2 — Detect the stack
+
+Read `package.json` and any existing schema files before writing the run-trace table.
+
+| Found in `package.json` | Read |
+|---|---|
+| `drizzle-orm` | `references/db-drizzle.md` |
+| `@prisma/client` | `references/db-prisma.md` |
+| `pg` or `postgres` (no ORM) | `references/db-raw-sql.md` |
+| `mysql2` (no ORM) | `references/db-raw-sql.md` (adapt syntax) |
+| `better-sqlite3` | `references/db-raw-sql.md` (adapt syntax) |
+| None | Ask: "What database are you using, or should I skip the run-trace table?" |
+
+Also detect framework (`next`, `express`, `fastify`) to use the right module/import style.
+
+## Step 3 — Write identity and memory files
 
 ### `agents/<name>/SOUL.md`
 
@@ -75,80 +81,48 @@ _Cap: 800 tokens. Compact when approaching limit._
 ```markdown
 # Learnings
 
-Format: one entry per learning. Tag with date and run context.
-
-<!-- Pattern-Key: unique slug to prevent duplicate entries -->
+<!-- Pattern-Key: unique-slug to prevent duplicate entries -->
 <!-- Example:
-## 2026-06-01 | hubspot-rate-limit
-Pattern-Key: hubspot-rate-limit
+## 2026-06-01 | api-rate-limit
+Pattern-Key: api-rate-limit
 Category: tool-gotcha
-Learning: HubSpot search API returns 429 after ~10 requests/minute with a free key.
+Learning: API returns 429 after ~10 requests/minute.
 Action: Added 6s delay between paginated calls.
 Status: active
 -->
 ```
 
 ### `agents/<name>/.learnings/ERRORS.md`
-
-```markdown
-# Errors
-
-Format: date | error type | what failed | what was tried | resolution
-
-<!-- Example:
-## 2026-06-01 | tool-failure
-Tool: web_search
-Error: "429 Too Many Requests"
-Tried: immediate retry x2
-Resolution: add exponential backoff with jitter
--->
-```
-
 ### `agents/<name>/.learnings/FEATURE_REQUESTS.md`
 
-```markdown
-# Feature Requests
-
-Capabilities the agent tried to use but doesn't have yet.
-
-<!-- Example:
-## 2026-06-01
-Wanted: ability to send Slack messages
-Context: user asked for a summary notification after each run
--->
-```
+Empty files with header comment.
 
 ### `agents/<name>/TOOLS.md`
 
 For each tool the user listed, write a stub:
 
 ```markdown
-# <Name> Agent — Tool Registry
-
 ## <tool_name>
 
 **Purpose:** <what it does>
-**Input schema:**
-\`\`\`typescript
-{ param: string } // Zod shape
-\`\`\`
-**Known gotchas:**
-- <!-- fill in from experience -->
+**Known gotchas:** <!-- fill from experience -->
 **Error pattern:**
 - On 429: wait 5s, retry once, then throw
 - On 404: return null, do not throw
 ```
 
-## Step 3 — Write the agent loop
+## Step 4 — Write the agent loop
 
-Create `src/agents/<name>/index.ts`:
+Use the Vercel AI SDK (`ai` package) if present. If not present, use the Anthropic SDK directly. Detect from `package.json`.
+
+**3-tier prompt structure** — this is why it matters:
+- **Stable tier** (SOUL.md + TOOLS.md): loaded once, stays at the top of the prompt. Anthropic's prompt cache preserves this prefix across thousands of runs — you pay for it once.
+- **Volatile tier** (MEMORY.md + current task): injected fresh each run. Only this tier changes.
 
 ```typescript
 import { generateText, tool } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { z } from 'zod'
-import { db } from '@/lib/db'
-import { agentRuns } from '@/db/schema/agent_runs'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
@@ -157,119 +131,52 @@ const AGENT_NAME = '<name>'
 const MODEL = '<model>'
 const TOKEN_BUDGET = <budget>
 
-// --- 3-tier prompt injection ---
-// Stable tier: read once, cache-warm across all turns
+// Stable tier — read once at module load, cache-warm across runs
 const soul = readFileSync(join(process.cwd(), `agents/${AGENT_NAME}/SOUL.md`), 'utf-8')
-const tools_doc = readFileSync(join(process.cwd(), `agents/${AGENT_NAME}/TOOLS.md`), 'utf-8')
+const toolsDocs = readFileSync(join(process.cwd(), `agents/${AGENT_NAME}/TOOLS.md`), 'utf-8')
+const STABLE_SYSTEM = `${soul}\n\n${toolsDocs}`
 
-// Volatile tier: read fresh each run (memory snapshot)
 function loadMemory(): string {
-  try {
-    return readFileSync(join(process.cwd(), `agents/${AGENT_NAME}/MEMORY.md`), 'utf-8')
-  } catch {
-    return ''
-  }
+  try { return readFileSync(join(process.cwd(), `agents/${AGENT_NAME}/MEMORY.md`), 'utf-8') }
+  catch { return '' }
 }
 
-const STABLE_SYSTEM = `${soul}\n\n${tools_doc}`
-
-export async function run<TInput>(input: TInput): Promise<void> {
+export async function run<TInput>(input: TInput): Promise<string> {
   const runId = randomUUID()
-  const startedAt = new Date()
+  const memory = loadMemory()
+  const system = `${STABLE_SYSTEM}\n\n## Memory\n${memory}\n\nRun ID: ${runId}`
 
-  // Log run start
-  await db.insert(agentRuns).values({
-    id: runId,
-    agentName: AGENT_NAME,
-    status: 'running',
-    startedAt,
-    invocationSource: 'on_demand',
+  const result = await generateText({
+    model: anthropic(MODEL),
+    system,
+    prompt: JSON.stringify(input),
+    maxTokens: TOKEN_BUDGET,
+    tools: {
+      // Replace with real tools matching TOOLS.md
+      example_tool: tool({
+        description: 'Example — replace with real tools',
+        parameters: z.object({ input: z.string() }),
+        execute: async ({ input }) => ({ result: input }),
+      }),
+    },
+    maxSteps: 10,
   })
 
-  try {
-    const memory = loadMemory()
-    const systemPrompt = `${STABLE_SYSTEM}\n\n## Memory (snapshot at run start)\n${memory}\n\nRun ID: ${runId} | Started: ${startedAt.toISOString()}`
-
-    const result = await generateText({
-      model: anthropic(MODEL),
-      system: systemPrompt,
-      prompt: JSON.stringify(input),
-      maxTokens: TOKEN_BUDGET,
-      tools: {
-        // TODO: add tools here — each matches an entry in TOOLS.md
-        example_tool: tool({
-          description: 'Example tool — replace with real tools',
-          parameters: z.object({ input: z.string() }),
-          execute: async ({ input }) => {
-            return { result: input }
-          },
-        }),
-      },
-      maxSteps: 10,
-    })
-
-    // Log success
-    await db
-      .update(agentRuns)
-      .set({
-        status: 'success',
-        finishedAt: new Date(),
-        tokensIn: result.usage.promptTokens,
-        tokensOut: result.usage.completionTokens,
-        actionTaken: result.text.slice(0, 500),
-      })
-      .where(eq(agentRuns.id, runId))
-
-  } catch (error) {
-    await db
-      .update(agentRuns)
-      .set({
-        status: 'error',
-        finishedAt: new Date(),
-        errorMsg: error instanceof Error ? error.message : String(error),
-      })
-      .where(eq(agentRuns.id, runId))
-
-    throw error
-  }
+  return result.text
 }
 ```
 
-## Step 4 — Write the run-trace schema
+## Step 5 — Write the run-trace schema
 
-Check if `src/db/schema/agent_runs.ts` exists. If it does, add any missing columns. If it doesn't, create it:
+Read the reference file detected in Step 2 for the exact schema and `withRunLogging` helper to match the project's database.
 
-```typescript
-import { pgTable, uuid, text, timestamp, integer, numeric } from 'drizzle-orm/pg-core'
+Wrap the `run()` function with `withRunLogging` so every execution is logged with status, duration, token counts, and cost.
 
-export const agentRuns = pgTable('agent_runs', {
-  id:               uuid('id').primaryKey().defaultRandom(),
-  agentName:        text('agent_name').notNull(),
-  status:           text('status').notNull(), // queued | running | success | error | skipped
-  invocationSource: text('invocation_source').notNull().default('on_demand'), // on_demand | scheduled
-  startedAt:        timestamp('started_at', { withTimezone: true }).notNull(),
-  finishedAt:       timestamp('finished_at', { withTimezone: true }),
-  tokensIn:         integer('tokens_in'),
-  tokensOut:        integer('tokens_out'),
-  costUsd:          numeric('cost_usd', { precision: 10, scale: 6 }),
-  actionTaken:      text('action_taken'),
-  errorMsg:         text('error_msg'),
-})
-```
+## Step 6 — Summarise
 
-## Step 5 — Write the migration
+Print a file tree of everything written. Tell the user:
 
-```bash
-npx drizzle-kit generate
-```
-
-Run this and confirm with the user before running `npx drizzle-kit migrate`.
-
-## Step 6 — Summarise what was created
-
-Print a file tree of everything written. Then tell the user:
-
-- What tool stubs need real implementations (point to `src/agents/<name>/index.ts`)
-- Whether to run the migration
-- How to invoke the agent: `import { run } from '@/agents/<name>'; await run({ ... })`
-- Next skill to run: `/ai-agent-add-observability` to wire tracing, or `/ai-agent-create-evals` to build a test harness
+- Which tool stubs need real implementations (`agents/<name>/TOOLS.md` + `src/agents/<name>/index.ts`)
+- How to invoke: `import { run } from './agents/<name>'; await run({ ... })`
+- Whether to run a migration (if a new table was created)
+- What to run next: `/ai-agent-add-observability` to wire tracing, or `/ai-agent-create-evals` to build a test harness

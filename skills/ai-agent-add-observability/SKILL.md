@@ -1,37 +1,63 @@
 ---
 name: ai-agent-add-observability
-description: Instrument an existing agent, agent team, or workflow with OpenTelemetry span tracing, token cost tracking, and a live SSE event feed. Writes src/lib/tracing.ts, wires BatchSpanProcessor to Langfuse or any OTLP endpoint, and adds a Next.js SSE route for a live dashboard feed. Use when the user wants to add observability to an agent, instrument an agent, see what their agent is doing, add tracing, monitor agent runs, track token costs, or set up a live activity feed. Triggers on: "add observability", "instrument my agent", "I can't see what the agent is doing", "add tracing", "track token costs", "monitor agent runs", "set up logging for my agent", "why did my agent do that".
+description: Use when the user wants to add observability, tracing, run logging, cost tracking, or a live event feed to an AI agent. Triggers on: "I can't see what my agent is doing", "add tracing", "track token costs", "monitor agent runs", "add observability", "instrument my agent", "why did my agent do that", "set up a live dashboard feed", "agent monitoring".
 ---
 
 # ai-agent-add-observability
 
-Wire OpenTelemetry tracing, cost tracking, and a live SSE event feed into an existing agent. This is a one-time setup per project — run it once, then all agents in the project share the same tracing infrastructure.
+Wire observability into an existing agent: OTel spans, persistent run logging, live SSE event feed, and token cost tracking. One-time setup per project — all agents share the same infrastructure.
 
-## Stack
+## Step 1 — Detect the stack
 
-- `@opentelemetry/api` + `@opentelemetry/sdk-node` for instrumentation
-- Langfuse (self-hosted Docker) as the default trace backend — easiest self-host, MIT license
-- OTel `BatchSpanProcessor` as the exporter — swap backend by changing `OTLP_ENDPOINT`
-- Next.js Route Handler for the SSE event feed
-- No third-party SaaS required
+Read these files before writing a single line of code:
 
-## Step 1 — Identify what to instrument
+1. **`package.json`** — detect ORM, DB client, and framework
+2. **Existing schema files** — `drizzle.config.ts`, `prisma/schema.prisma`, `db/schema/*.ts`, `src/db/*.ts`, `lib/db.ts`
+3. **Framework config** — `next.config.*`, `app.ts`, `server.ts`, `main.ts`
+4. **Existing `agent_runs` table** — if it already exists, extend it; don't recreate
 
-Read the project structure. Find:
-- Solo agent files (`src/agents/*/index.ts`)
-- Team supervisor files (`src/agents/*/supervisor.ts`)
-- Workflow files (`src/workflows/*.ts`)
+Then load the matching reference files:
 
-Note which ones already have OTel instrumentation (check for `@opentelemetry/api` imports). Only instrument what's missing.
+| Detected in `package.json` | Read this file |
+|---|---|
+| `drizzle-orm` | `references/db-drizzle.md` |
+| `@prisma/client` | `references/db-prisma.md` |
+| `pg` or `postgres` (no ORM) | `references/db-raw-postgres.md` |
+| `mysql2` (no ORM) | `references/db-raw-mysql.md` |
+| `better-sqlite3` | `references/db-raw-sqlite.md` |
+| None of the above | Ask: "What database are you using?" |
 
-## Step 2 — Install dependencies
+| Detected in `package.json` | Read this file |
+|---|---|
+| `next` | `references/sse-nextjs.md` |
+| `express` | `references/sse-express.md` |
+| `fastify` | `references/sse-fastify.md` |
+| None | `references/sse-generic.md` |
 
+Confirm what you found before proceeding — one line: "Detected Drizzle + Postgres on Next.js — generating code to match."
+
+## Step 2 — Three observability layers
+
+Build all three. They are independent — each works without the others, but together they give you complete visibility.
+
+### Layer 1 — Persistent run log (your own DB)
+
+This is the primary store. Every agent run is logged here regardless of any external tool. Read the DB reference file loaded in Step 1 for the schema and `withRunLogging` helper.
+
+The `agent_runs` table captures: run ID, agent name, status, trigger source, start/end time, token counts, cost in USD, final result summary, and error message.
+
+If `agent_runs` already exists in the project schema, check what columns are present and add only what's missing. Do not recreate a table that already exists.
+
+### Layer 2 — OTel spans (optional, any OTLP backend)
+
+Spans give you structured trace data you can send to any backend that accepts OTLP — Jaeger, Grafana Tempo, Zipkin, or a self-hosted Langfuse instance. The backend choice is entirely separate from the instrumentation.
+
+Install once:
 ```bash
 npm install @opentelemetry/api @opentelemetry/sdk-node @opentelemetry/exporter-trace-otlp-http @opentelemetry/resources @opentelemetry/semantic-conventions
 ```
 
-## Step 3 — Write `src/lib/tracing.ts`
-
+`src/lib/tracing.ts`:
 ```typescript
 import { NodeSDK } from '@opentelemetry/sdk-node'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
@@ -39,226 +65,73 @@ import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base'
 import { Resource } from '@opentelemetry/resources'
 import { SEMRESATTRS_SERVICE_NAME } from '@opentelemetry/semantic-conventions'
 
-// Singleton — call initTracing() once at app startup
 let sdk: NodeSDK | null = null
 
 export function initTracing(serviceName: string): void {
-  if (sdk) return
-
+  if (sdk || !process.env.OTLP_ENDPOINT) return
   const exporter = new OTLPTraceExporter({
-    url: process.env.OTLP_ENDPOINT ?? 'http://localhost:3100/v1/traces',
-    headers: {
-      'Authorization': `Basic ${Buffer.from(
-        `${process.env.LANGFUSE_PUBLIC_KEY}:${process.env.LANGFUSE_SECRET_KEY}`
-      ).toString('base64')}`,
-    },
+    url: process.env.OTLP_ENDPOINT,
+    headers: process.env.OTLP_AUTH_HEADER
+      ? { Authorization: process.env.OTLP_AUTH_HEADER }
+      : undefined,
   })
-
   sdk = new NodeSDK({
     resource: new Resource({ [SEMRESATTRS_SERVICE_NAME]: serviceName }),
-    spanProcessors: [new BatchSpanProcessor(exporter, {
-      maxQueueSize: 2048,
-      maxExportBatchSize: 512,
-      scheduledDelayMillis: 5000,
-    })],
+    spanProcessors: [new BatchSpanProcessor(exporter)],
   })
-
   sdk.start()
-
   process.on('SIGTERM', () => sdk?.shutdown())
 }
 
-// Helper: create a root span for an agent run
 export { trace, context, SpanStatusCode } from '@opentelemetry/api'
 ```
 
-Add to `.env.local`:
+Wrap each agent run in a span. Inside the span, record token usage after each LLM call:
+```typescript
+span.setAttributes({
+  'gen_ai.usage.input_tokens': result.usage.promptTokens,
+  'gen_ai.usage.output_tokens': result.usage.completionTokens,
+  'gen_ai.usage.cost_usd': calcCost(model, result.usage),
+})
 ```
-OTLP_ENDPOINT=http://localhost:3100/v1/traces
-LANGFUSE_PUBLIC_KEY=
-LANGFUSE_SECRET_KEY=
+
+`.env`:
+```
+OTLP_ENDPOINT=    # any OTLP/HTTP endpoint — leave blank to disable OTel silently
+OTLP_AUTH_HEADER= # optional, e.g. "Basic base64(key:secret)"
 ```
 
-## Step 4 — Instrument each agent
+### Layer 3 — SSE live event feed (optional)
 
-For each uninstrumented agent, wrap the run function. The span type tells the trace viewer what kind of operation this is.
+A lightweight pub/sub bus that lets a dashboard subscribe to agent events in real time. Read the SSE reference file loaded in Step 1 for the framework-specific implementation.
 
-**For solo agents** — add to `src/agents/<name>/index.ts`:
+The event bus emits typed events: `run.started`, `run.completed`, `run.errored`, `tool.called`, `tool.returned`. The SSE route keeps the connection alive with 30-second heartbeats.
+
+## Step 3 — Cost tracking
+
+Add this helper. Rates are mid-2026 — update if models change:
 
 ```typescript
-import { initTracing, trace, SpanStatusCode } from '@/lib/tracing'
-initTracing('<name>-agent')
-const tracer = trace.getTracer('<name>-agent')
-
-// Wrap existing run() body:
-export async function run(input: unknown): Promise<void> {
-  return tracer.startActiveSpan('<name>.run', async (span) => {
-    span.setAttributes({
-      'entity.type': 'agent',
-      'agent.name': '<name>',
-      'gen_ai.system': 'anthropic',
-    })
-    try {
-      // ... existing run logic ...
-      // After generateText(), add:
-      span.setAttributes({
-        'gen_ai.usage.prompt_tokens': result.usage.promptTokens,
-        'gen_ai.usage.completion_tokens': result.usage.completionTokens,
-      })
-      span.setStatus({ code: SpanStatusCode.OK })
-    } catch (err) {
-      span.setStatus({ code: SpanStatusCode.ERROR, message: String(err) })
-      throw err
-    } finally {
-      span.end()
-    }
-  })
+const COST_PER_TOKEN: Record<string, { input: number; output: number }> = {
+  'claude-sonnet-4-6':         { input: 0.000003,  output: 0.000015 },
+  'claude-opus-4-8':           { input: 0.000015,  output: 0.000075 },
+  'claude-haiku-4-5-20251001': { input: 0.0000008, output: 0.000004 },
 }
-```
 
-**For workflow steps** — wrap each step function with a child span:
-
-```typescript
-async function step_<name>(state: WorkflowState): Promise<...> {
-  return tracer.startActiveSpan('workflow.step.<name>', async (span) => {
-    span.setAttributes({
-      'entity.type': 'workflow',
-      'workflow.step.name': '<name>',
-      'workflow.step.index': <index>,
-    })
-    try {
-      const result = await /* ... step logic ... */
-      span.setStatus({ code: SpanStatusCode.OK })
-      return result
-    } catch (err) {
-      span.setStatus({ code: SpanStatusCode.ERROR, message: String(err) })
-      throw err
-    } finally {
-      span.end()
-    }
-  })
-}
-```
-
-## Step 5 — Write the SSE event bus
-
-`src/lib/event-bus.ts`:
-
-```typescript
-import { EventEmitter } from 'events'
-
-// Singleton broadcast bus — agents emit here, SSE clients listen
-class EventBus extends EventEmitter {}
-export const eventBus = new EventBus()
-eventBus.setMaxListeners(100)
-
-export type AgentEvent =
-  | { type: 'run.created';   agentName: string; runId: string; startedAt: string }
-  | { type: 'run.completed'; agentName: string; runId: string; status: string; durationMs: number }
-  | { type: 'run.error';     agentName: string; runId: string; error: string }
-  | { type: 'step.completed'; workflowName: string; stepName: string; stepIndex: number }
-
-export function emitAgentEvent(event: AgentEvent): void {
-  eventBus.emit('agent-event', event)
-}
-```
-
-`src/app/api/agents/stream/route.ts`:
-
-```typescript
-import { eventBus } from '@/lib/event-bus'
-import type { AgentEvent } from '@/lib/event-bus'
-
-export async function GET(): Promise<Response> {
-  const stream = new ReadableStream({
-    start(controller) {
-      const encoder = new TextEncoder()
-
-      const send = (data: AgentEvent) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
-      }
-
-      // Heartbeat every 30s to keep connection alive
-      const heartbeat = setInterval(() => {
-        controller.enqueue(encoder.encode(': heartbeat\n\n'))
-      }, 30_000)
-
-      eventBus.on('agent-event', send)
-
-      // Cleanup on client disconnect
-      return () => {
-        eventBus.off('agent-event', send)
-        clearInterval(heartbeat)
-      }
-    },
-  })
-
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-    },
-  })
-}
-```
-
-Then add `emitAgentEvent(...)` calls inside each agent's run function at start and completion.
-
-## Step 6 — Add cost tracking
-
-Add a `costUsd` calculation after each `generateText` call. Rates as of mid-2026:
-
-```typescript
-const COST_PER_TOKEN = {
-  'claude-sonnet-4-6': { input: 0.000003, output: 0.000015 },
-  'claude-opus-4-8':   { input: 0.000015, output: 0.000075 },
-  'claude-haiku-4-5':  { input: 0.0000008, output: 0.000004 },
-} as const
-
-function calcCost(model: string, promptTokens: number, completionTokens: number): number {
-  const rates = COST_PER_TOKEN[model as keyof typeof COST_PER_TOKEN]
+export function calcCost(model: string, usage: { promptTokens: number; completionTokens: number }): number {
+  const rates = COST_PER_TOKEN[model]
   if (!rates) return 0
-  return promptTokens * rates.input + completionTokens * rates.output
+  return usage.promptTokens * rates.input + usage.completionTokens * rates.output
 }
 ```
 
-Write `costUsd` to `agent_runs` and set it as a span attribute: `span.setAttribute('gen_ai.usage.cost_usd', costUsd)`.
+Write `costUsd` to the `agent_runs` table and as an OTel span attribute. Both are queryable independently.
 
-## Step 7 — Langfuse self-host setup (optional but recommended)
-
-If Langfuse isn't running yet, add `docker-compose.langfuse.yml`:
-
-```yaml
-version: '3'
-services:
-  langfuse:
-    image: langfuse/langfuse:latest
-    ports:
-      - "3100:3000"
-    environment:
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/langfuse
-      NEXTAUTH_SECRET: changeme
-      SALT: changeme
-    depends_on: [db]
-  db:
-    image: postgres:16
-    environment:
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: langfuse
-    volumes:
-      - langfuse_db:/var/lib/postgresql/data
-volumes:
-  langfuse_db:
-```
-
-Start with `docker compose -f docker-compose.langfuse.yml up -d`. Dashboard at `http://localhost:3100`.
-
-## Step 8 — Summarise
+## Step 4 — Summarise
 
 Tell the user:
-- Which files were written and which agents were instrumented
-- How to view traces: open Langfuse at `http://localhost:3100`
-- How to consume the SSE feed: `const es = new EventSource('/api/agents/stream')`
-- What env vars to set: `OTLP_ENDPOINT`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`
-- Cost tracking is live — check the `cost_usd` column in `agent_runs`
+- Which files were written
+- How to trigger the SSE feed from a frontend: `new EventSource('/api/agents/stream')`
+- `OTLP_ENDPOINT` is optional — leave it unset to disable OTel without errors
+- DB columns are the primary store — the run log page works without any external tool
+- If they want a trace UI, suggest Jaeger (zero-config local) or Langfuse (richer UI, self-hosted Docker)

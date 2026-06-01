@@ -1,19 +1,31 @@
 ---
 name: ai-agent-create-workflow
-description: Build a scheduled multi-step AI agent pipeline with typed step inputs/outputs, conditional branching, retry logic, checkpoint resume, and cron scheduling via a Drizzle routines table. Use when the user wants to automate a recurring multi-step process, build a scheduled pipeline, create a workflow that runs on a cron schedule, or wire sequential/parallel steps together. Triggers on: "create a workflow", "build a pipeline", "scheduled agent", "automate a process", "steps that run in order", "recurring job", "nightly/weekly/hourly agent".
+description: Build a scheduled multi-step AI agent pipeline with typed step inputs/outputs, conditional branching, retry logic, checkpoint resume, and cron scheduling. Use when the user wants to automate a recurring multi-step process, build a scheduled pipeline, create a workflow that runs on a cron schedule, or wire sequential/parallel steps together. Triggers on: "create a workflow", "build a pipeline", "scheduled agent", "automate a process", "steps that run in order", "recurring job", "nightly/weekly/hourly agent".
 ---
 
 # ai-agent-create-workflow
 
 Build a scheduled multi-step workflow. Each step has typed input/output via Zod, can branch conditionally, retry on failure, and suspend for human approval. The workflow is triggered by a cron entry in the `routines` database table.
 
-## Stack assumptions
+## Stack detection
 
+Read `package.json` and existing schema files before writing any database code.
+
+| Found in `package.json` | Read |
+|---|---|
+| `drizzle-orm` | `references/db-drizzle.md` |
+| `@prisma/client` | `references/db-prisma.md` |
+| `pg`, `mysql2`, or `better-sqlite3` | `references/db-raw-sql.md` |
+| None | Ask: "What database are you using?" |
+
+Also detect framework (`next`, `express`, `fastify`) for the trigger endpoint pattern.
+
+Confirm: "Detected Drizzle + Postgres on Next.js — generating code to match."
+
+**Fixed across all stacks:**
 - Vercel AI SDK (`ai` package) for any LLM steps
 - Zod for step input/output schemas
-- Drizzle ORM + Postgres for the `routines` + `routine_runs` scheduling tables
 - Workflow code lives in `src/workflows/<name>.ts`
-- Cron trigger via a Next.js Route Handler or external scheduler calling `POST /api/workflows/<name>/trigger`
 
 ## Step 1 — Gather inputs
 
