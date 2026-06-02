@@ -1,4 +1,4 @@
-# Run Trace Schema — Raw SQL
+# Run Trace Schema - Raw SQL
 
 Works with pg, mysql2, better-sqlite3, or any SQL database. Adapt the syntax (SERIAL vs AUTOINCREMENT, TEXT vs VARCHAR) as needed.
 

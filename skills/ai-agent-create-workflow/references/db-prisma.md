@@ -1,4 +1,4 @@
-# Scheduling Tables — Prisma
+# Scheduling Tables - Prisma
 
 ```prisma
 model Routine {

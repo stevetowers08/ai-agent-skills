@@ -1,4 +1,4 @@
-# SSE Live Event Feed — Express
+# SSE Live Event Feed - Express
 
 Use the same `event-bus.ts` singleton from `references/sse-nextjs.md`. Only the route differs.
 

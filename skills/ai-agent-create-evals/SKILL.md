@@ -1,6 +1,6 @@
 ---
 name: ai-agent-create-evals
-description: Build a golden-trace eval harness for an agent or workflow — extract representative run fixtures, write a typed test runner, score pass/fail per fixture, and output a results report. Use when the user wants to test their agent, create evals, make sure the agent still works after a change, write regression tests, or validate agent behavior before shipping. Triggers on: "create evals for my agent", "test my agent", "write tests for the agent", "regression test the agent", "make sure the agent still works", "validate agent behavior", "agent tests", "eval harness".
+description: Build a golden-trace eval harness for an agent or workflow - extract representative run fixtures, write a typed test runner, score pass/fail per fixture, and output a results report. Use when the user wants to test their agent, create evals, make sure the agent still works after a change, write regression tests, or validate agent behavior before shipping. Triggers on: "create evals for my agent", "test my agent", "write tests for the agent", "regression test the agent", "make sure the agent still works", "validate agent behavior", "agent tests", "eval harness".
 ---
 
 # ai-agent-create-evals
@@ -9,13 +9,13 @@ Build a golden-trace eval harness. Extracts real run history as fixtures, writes
 
 ## What makes a good agent eval
 
-Unlike unit tests, agent evals don't test exact output — LLMs are non-deterministic. Instead they test:
-- **Tool call sequence** — did the agent use the right tools in roughly the right order?
-- **Output shape** — does the result match the expected Zod schema?
-- **No-hallucination** — did the agent fabricate a result when it should have stopped?
-- **Cost bounds** — did the run stay within expected token budget?
+Unlike unit tests, agent evals don't test exact output - LLMs are non-deterministic. Instead they test:
+- **Tool call sequence** - did the agent use the right tools in roughly the right order?
+- **Output shape** - does the result match the expected Zod schema?
+- **No-hallucination** - did the agent fabricate a result when it should have stopped?
+- **Cost bounds** - did the run stay within expected token budget?
 
-## Step 1 — Find run history
+## Step 1 - Find run history
 
 Read `activity-log.json` or query the `agent_runs` table for this agent. Look for:
 - 3-5 runs with `status = 'success'` that cover different input types
@@ -23,7 +23,7 @@ Read `activity-log.json` or query the `agent_runs` table for this agent. Look fo
 
 If there's no run history yet, ask the user to describe 2-3 representative scenarios and create synthetic fixtures from those descriptions.
 
-## Step 2 — Extract golden fixtures
+## Step 2 - Extract golden fixtures
 
 For each selected run, create a fixture in `evals/<agent-name>/fixtures/`:
 
@@ -47,7 +47,7 @@ For error-case fixtures, set `"shouldSucceed": false` and add:
 "expectedError": "partial match of expected error message"
 ```
 
-## Step 3 — Write the test runner
+## Step 3 - Write the test runner
 
 `evals/<agent-name>/runner.ts`:
 
@@ -88,7 +88,7 @@ async function runEval(fixture: Fixture): Promise<EvalResult> {
   const toolCallLog: string[] = []
 
   // Patch: intercept tool calls to capture sequence
-  // (inject a spy wrapper around execute() for each tool — or read from agent_runs after the run)
+  // (inject a spy wrapper around execute() for each tool - or read from agent_runs after the run)
 
   try {
     const result = await run(fixture.input as any)
@@ -166,7 +166,7 @@ Add to `package.json`:
 }
 ```
 
-## Step 4 — Add a README
+## Step 4 - Add a README
 
 `evals/<agent-name>/README.md`:
 ```markdown
@@ -186,10 +186,10 @@ Run: `npm run eval:<name>`
 4. Run the suite to confirm it passes
 ```
 
-## Step 5 — Summarise
+## Step 5 - Summarise
 
 Tell the user:
 - How many fixtures were created and what scenarios they cover
 - How to run: `npm run eval:<name>`
-- What the tool sequence check requires (OTel tracing must be on to capture tool call order automatically — if not, show them the manual log pattern)
+- What the tool sequence check requires (OTel tracing must be on to capture tool call order automatically - if not, show them the manual log pattern)
 - Suggest running evals in CI: "Add `npm run eval:<name>` to your deploy workflow to catch regressions before they reach production"

@@ -1,4 +1,4 @@
-# Scheduling Tables — Raw SQL
+# Scheduling Tables - Raw SQL
 
 ```sql
 CREATE TABLE IF NOT EXISTS routines (

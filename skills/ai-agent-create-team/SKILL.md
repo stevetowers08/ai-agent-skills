@@ -7,9 +7,9 @@ description: Scaffold a supervisor + worker agent team with delegation protocol,
 
 Scaffold a supervisor-worker agent team. The supervisor receives a task and delegates subtasks to specialist workers. Each agent gets its own identity and memory. Spans nest so the full team trace is visible in one tree.
 
-## Step 0 — Detect the stack
+## Step 0 - Detect the stack
 
-Read `package.json` before writing any code — same detection as `ai-agent-create-solo`.
+Read `package.json` before writing any code - same detection as `ai-agent-create-solo`.
 
 | Found in `package.json` | Use |
 |---|---|
@@ -18,25 +18,25 @@ Read `package.json` before writing any code — same detection as `ai-agent-crea
 | `pg`, `postgres`, or `@supabase/supabase-js` | Raw SQL / pg pool |
 | None | Ask before generating any DB code |
 
-Confirm in one line: "Detected Drizzle + Next.js — generating supervisor to match."
+Confirm in one line: "Detected Drizzle + Next.js - generating supervisor to match."
 
-## Step 1 — Gather inputs
+## Step 1 - Gather inputs
 
 Ask all at once:
 
-1. **Team name** — snake_case (e.g. `outreach_team`)
-2. **Supervisor role** — what does the supervisor decide and coordinate?
-3. **Workers** — list each worker by name and single-sentence role (e.g. `researcher: finds company info`, `writer: drafts the email`)
-4. **Delegation mode** — sequential (one worker at a time) or parallel (workers run concurrently where possible)?
-5. **Output mode** — does the supervisor get each worker's full message history (`full_history`) or just the final result (`last_message`)? Default: `last_message`.
-6. **Model** — one model for all, or different models per agent?
+1. **Team name** - snake_case (e.g. `outreach_team`)
+2. **Supervisor role** - what does the supervisor decide and coordinate?
+3. **Workers** - list each worker by name and single-sentence role (e.g. `researcher: finds company info`, `writer: drafts the email`)
+4. **Delegation mode** - sequential (one worker at a time) or parallel (workers run concurrently where possible)?
+5. **Output mode** - does the supervisor get each worker's full message history (`full_history`) or just the final result (`last_message`)? Default: `last_message`.
+6. **Model** - one model for all, or different models per agent?
 
-## Step 2 — Write identity files per agent
+## Step 2 - Write identity files per agent
 
 ### `agents/<team>/AGENTS.md` (team topology)
 
 ```markdown
-# <Team Name> — Agent Topology
+# <Team Name> - Agent Topology
 
 ## Supervisor
 **Name:** <supervisor_name>
@@ -61,7 +61,7 @@ For each agent (supervisor + each worker), write `agents/<team>/<agent_name>/SOU
 - Which agents it may communicate with (workers: none; supervisor: all workers)
 - Escalation triggers
 
-## Step 3 — Write the supervisor
+## Step 3 - Write the supervisor
 
 `src/agents/<team>/supervisor.ts`:
 
@@ -81,19 +81,19 @@ import { logRun } from '@/lib/agent-runs'
 const AGENT_NAME = '<team>_supervisor'
 const tracer = trace.getTracer(AGENT_NAME)
 
-// Stable tier — read once at module load, cache-warm across runs
+// Stable tier - read once at module load, cache-warm across runs
 const soul = readFileSync(join(process.cwd(), `agents/<team>/supervisor/SOUL.md`), 'utf-8')
 const toolsDocs = readFileSync(join(process.cwd(), `agents/<team>/supervisor/TOOLS.md`), 'utf-8')
 const STABLE_SYSTEM = `${soul}\n\n${toolsDocs}`
 
-// Worker registry — workers accept only the task string; OTel context propagates via context.with()
+// Worker registry - workers accept only the task string; OTel context propagates via context.with()
 const WORKERS: Record<string, (task: string) => Promise<string>> = {
   '<worker_1>': (task) => runWorker1({ task }),
   '<worker_2>': (task) => runWorker2({ task }),
 }
 
 export async function run(input: { task: string }): Promise<string> {
-  const teamRunId = randomUUID() // stable ID — correlates all spans in this team run
+  const teamRunId = randomUUID() // stable ID - correlates all spans in this team run
 
   return tracer.startActiveSpan(`${AGENT_NAME}.run`, async (rootSpan) => {
     rootSpan.setAttributes({
@@ -122,7 +122,7 @@ export async function run(input: { task: string }): Promise<string> {
                 try {
                   const workerFn = WORKERS[worker]
                   if (!workerFn) throw new Error(`Unknown worker: ${worker}`)
-                  // context.with() propagates the active span into the worker call —
+                  // context.with() propagates the active span into the worker call -
                   // worker's internal spans nest automatically without passing a Span object
                   const result = await context.with(
                     trace.setSpan(context.active(), childSpan),
@@ -158,14 +158,14 @@ export async function run(input: { task: string }): Promise<string> {
 }
 ```
 
-## Step 4 — Write each worker
+## Step 4 - Write each worker
 
-`src/agents/<team>/<worker_name>.ts` — use the same structure as `ai-agent-create-solo` but:
-- The worker's `run()` function accepts `(input: { task: string })` — no Span parameter needed
-- OTel context propagates automatically via `context.with()` in the supervisor — worker spans nest correctly without passing a Span object across call boundaries
-- Workers do not write to `agent_runs` directly — the supervisor owns the run record
+`src/agents/<team>/<worker_name>.ts` - use the same structure as `ai-agent-create-solo` but:
+- The worker's `run()` function accepts `(input: { task: string })` - no Span parameter needed
+- OTel context propagates automatically via `context.with()` in the supervisor - worker spans nest correctly without passing a Span object across call boundaries
+- Workers do not write to `agent_runs` directly - the supervisor owns the run record
 
-## Step 5 — Write `AGENTS.md` escalation rules
+## Step 5 - Write `AGENTS.md` escalation rules
 
 After writing code, add to `agents/<team>/AGENTS.md`:
 
@@ -178,7 +178,7 @@ All agents in this team share the same conversationId derived from the superviso
 This groups all worker spans under one trace in the observability dashboard.
 ```
 
-## Step 6 — Summarise
+## Step 6 - Summarise
 
 Print the file tree. Tell the user:
 
@@ -186,7 +186,7 @@ Print the file tree. Tell the user:
 - That worker spans will nest under the supervisor in any OTel-compatible trace viewer
 - Next steps: `/ai-agent-add-observability` to configure the trace exporter, `/ai-agent-create-evals` to test delegation routing
 
-## Step 7 — Optional: team management UI
+## Step 7 - Optional: team management UI
 
 Ask once: "Do you want a developer dashboard for this team? It adds a topology view, MCP server setup, and agent config panel."
 
@@ -194,17 +194,17 @@ If yes:
 
 ### Pages to generate
 
-**`/team`** — topology canvas
+**`/team`** - topology canvas
 - Install `reactflow` if not present
 - ReactFlow graph: supervisor node + worker nodes, directed delegation edges
 - Each node: agent name, role badge, status dot (idle/busy/error/offline), last-run timestamp
 - Click a node: sidebar with agent detail (model, tools enabled, recent runs)
 - Auto-refresh every 10s via `useInterval` polling `/api/team/agents`; pause when tab is hidden
 
-**`/team/mcps`** — MCP server setup
+**`/team/mcps`** - MCP server setup
 - Table of registered MCP servers: name, command, env var keys (values masked), status, last-tested
 - "Add server" form: name, command (e.g. `npx -y @modelcontextprotocol/server-memory`), key-value env var repeater
-- "Test" button per row — POSTs to `/api/team/mcps/[id]/test`, spawns the command as a child process with 5s timeout, shows success/error inline
+- "Test" button per row - POSTs to `/api/team/mcps/[id]/test`, spawns the command as a child process with 5s timeout, shows success/error inline
 - Env var values are write-only in the UI; warn the developer to move secrets to a secrets manager before production
 
 ### API routes
@@ -219,4 +219,4 @@ If yes:
 
 **File-backed store:** `.agent-team.json` at project root (add to `.gitignore`). Export `readStore()` and `writeStore(data)` from `lib/team/store.ts`.
 
-**Agent status detection:** check for heartbeat files in `.agent-heartbeats/<agentId>` — content is `{ status, lastRunAt }`. Return `status: 'offline'` for any agent with no heartbeat file; developer wires their agent loop to write these.
+**Agent status detection:** check for heartbeat files in `.agent-heartbeats/<agentId>` - content is `{ status, lastRunAt }`. Return `status: 'offline'` for any agent with no heartbeat file; developer wires their agent loop to write these.

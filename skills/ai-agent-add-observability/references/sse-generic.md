@@ -1,4 +1,4 @@
-# SSE Live Event Feed — Generic (Node.js HTTP)
+# SSE Live Event Feed - Generic (Node.js HTTP)
 
 Use the same `event-bus.ts` singleton from `references/sse-nextjs.md`. This works with any Node.js HTTP server.
 

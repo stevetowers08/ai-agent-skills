@@ -16,31 +16,31 @@ Read `package.json` and existing schema files before writing any database code.
 | `drizzle-orm` | `references/db-drizzle.md` |
 | `@prisma/client` | `references/db-prisma.md` |
 | `pg`, `postgres`, `mysql2`, or `better-sqlite3` | `references/db-raw-sql.md` |
-| `@supabase/supabase-js` | `references/db-raw-sql.md` (Supabase uses Postgres — adapt pool to supabase client) |
+| `@supabase/supabase-js` | `references/db-raw-sql.md` (Supabase uses Postgres - adapt pool to supabase client) |
 | None | Ask: "What database are you using?" |
 
 Also detect framework (`next`, `express`, `fastify`) for the trigger endpoint pattern.
 
-Confirm: "Detected Drizzle + Postgres on Next.js — generating code to match."
+Confirm: "Detected Drizzle + Postgres on Next.js - generating code to match."
 
 **Fixed across all stacks:**
 - Vercel AI SDK (`ai` package) for any LLM steps
 - Zod for step input/output schemas
 - Workflow code lives in `src/workflows/<name>.ts`
 
-## Step 1 — Gather inputs
+## Step 1 - Gather inputs
 
 Ask all at once:
 
-1. **Workflow name** — snake_case (e.g. `weekly_lead_enrichment`)
-2. **Steps** — list each step by name and what it does. Note which steps are AI (LLM call) and which are deterministic (API call, DB write, etc.)
-3. **Branching** — are there steps that only run if a condition is met? Which ones?
-4. **Parallel steps** — are there steps that can run at the same time?
-5. **Schedule** — cron expression + timezone (e.g. `0 9 * * 1` = every Monday 9am UTC)
-6. **Human approval** — does any step need a human to approve before continuing?
-7. **Concurrency** — if the schedule fires while a run is already active, should it skip or queue? Default: skip (coalesce_if_active)
+1. **Workflow name** - snake_case (e.g. `weekly_lead_enrichment`)
+2. **Steps** - list each step by name and what it does. Note which steps are AI (LLM call) and which are deterministic (API call, DB write, etc.)
+3. **Branching** - are there steps that only run if a condition is met? Which ones?
+4. **Parallel steps** - are there steps that can run at the same time?
+5. **Schedule** - cron expression + timezone (e.g. `0 9 * * 1` = every Monday 9am UTC)
+6. **Human approval** - does any step need a human to approve before continuing?
+7. **Concurrency** - if the schedule fires while a run is already active, should it skip or queue? Default: skip (coalesce_if_active)
 
-## Step 2 — Write the workflow file
+## Step 2 - Write the workflow file
 
 `src/workflows/<name>.ts`:
 
@@ -76,14 +76,14 @@ async function step_<step_1_name>(state: WorkflowState): Promise<Partial<Workflo
   return {}
 }
 
-// Conditional step — only runs if condition is met
+// Conditional step - only runs if condition is met
 async function step_<conditional_name>(state: WorkflowState): Promise<Partial<WorkflowState> | null> {
   if (!/* condition from state */) return null // skip
   // TODO: implement
   return {}
 }
 
-// Parallel steps — these run concurrently
+// Parallel steps - these run concurrently
 async function step_<parallel_a>(state: WorkflowState): Promise<Partial<WorkflowState>> {
   // TODO: implement
   return {}
@@ -131,7 +131,7 @@ async function step_ai_example(state: WorkflowState): Promise<Partial<WorkflowSt
 }
 ```
 
-## Step 3 — Write the Drizzle scheduling schema
+## Step 3 - Write the Drizzle scheduling schema
 
 Check if `src/db/schema/routines.ts` exists. If not, create it:
 
@@ -164,7 +164,7 @@ export const routineRuns = pgTable('routine_runs', {
 })
 ```
 
-## Step 4 — Seed the routine
+## Step 4 - Seed the routine
 
 Write a seed script or migration that inserts the routine:
 
@@ -177,7 +177,7 @@ await db.insert(routines).values({
 })
 ```
 
-## Step 5 — Write the trigger route
+## Step 5 - Write the trigger route
 
 `src/app/api/workflows/<name>/trigger/route.ts`:
 
@@ -215,8 +215,8 @@ export async function POST(req: Request) {
     dispatchFingerprint: req.headers.get('x-dispatch-fingerprint') ?? runId,
   })
 
-  // Run async — don't await so the 202 returns immediately
-  // On Vercel: replace with `waitUntil(run(...))` from `@vercel/functions` — plain floating
+  // Run async - don't await so the 202 returns immediately
+  // On Vercel: replace with `waitUntil(run(...))` from `@vercel/functions` - plain floating
   // promises are killed when the serverless function freezes after the Response is returned.
   const body = await req.json().catch(() => ({}))
   run(body).then(async () => {
@@ -233,7 +233,7 @@ export async function POST(req: Request) {
 }
 ```
 
-## Step 6 — Add retry logic to high-risk steps
+## Step 6 - Add retry logic to high-risk steps
 
 For any step that calls an external API, wrap it:
 
@@ -255,7 +255,7 @@ async function withRetry<T>(
 }
 ```
 
-## Step 7 — Summarise
+## Step 7 - Summarise
 
 Print the file tree. Tell the user:
 

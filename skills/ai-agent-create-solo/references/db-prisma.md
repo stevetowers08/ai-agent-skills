@@ -1,6 +1,6 @@
-# Run Trace Schema — Prisma
+# Run Trace Schema - Prisma
 
-Add to `prisma/schema.prisma`. Check first — add only missing fields if `AgentRun` model already exists.
+Add to `prisma/schema.prisma`. Check first - add only missing fields if `AgentRun` model already exists.
 
 ```prisma
 model AgentRun {
@@ -24,7 +24,7 @@ Run `npx prisma migrate dev --name add_agent_runs` or `npx prisma db push`.
 
 ## withRunLogging
 
-Import a shared singleton — do NOT instantiate `new PrismaClient()` inline; it creates a
+Import a shared singleton - do NOT instantiate `new PrismaClient()` inline; it creates a
 new connection pool on every module import, exhausting connections in serverless environments.
 
 ```typescript

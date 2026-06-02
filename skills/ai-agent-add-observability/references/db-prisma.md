@@ -1,6 +1,6 @@
-# Run Logging — Prisma
+# Run Logging - Prisma
 
-Add to `prisma/schema.prisma`. Check if `AgentRun` model already exists first — add only missing fields if so.
+Add to `prisma/schema.prisma`. Check if `AgentRun` model already exists first - add only missing fields if so.
 
 ```prisma
 model AgentRun {

@@ -1,4 +1,4 @@
-# Run Logging — Raw MySQL (mysql2)
+# Run Logging - Raw MySQL (mysql2)
 
 ```sql
 CREATE TABLE IF NOT EXISTS agent_runs (

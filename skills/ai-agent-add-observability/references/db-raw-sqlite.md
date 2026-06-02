@@ -1,4 +1,4 @@
-# Run Logging — SQLite (better-sqlite3)
+# Run Logging - SQLite (better-sqlite3)
 
 ```typescript
 import Database from 'better-sqlite3'

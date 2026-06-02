@@ -1,4 +1,4 @@
-# Run Trace Schema — Drizzle ORM
+# Run Trace Schema - Drizzle ORM
 
 Check if `agent_runs` already exists in the project schema. Add only missing columns if so.
 

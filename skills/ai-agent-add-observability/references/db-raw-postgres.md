@@ -1,4 +1,4 @@
-# Run Logging — Raw Postgres (pg / postgres.js)
+# Run Logging - Raw Postgres (pg / postgres.js)
 
 Create the table with a migration file or run directly:
 
@@ -57,4 +57,4 @@ export async function withRunLogging<T>(
 }
 ```
 
-For postgres.js (`import postgres from 'postgres'`), the query syntax is template literals: `` sql`INSERT INTO ...` `` — same logic, different client API.
+For postgres.js (`import postgres from 'postgres'`), the query syntax is template literals: `` sql`INSERT INTO ...` `` - same logic, different client API.

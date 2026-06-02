@@ -1,4 +1,4 @@
-# Run Logging — Drizzle ORM
+# Run Logging - Drizzle ORM
 
 Check if `agent_runs` already exists in the schema. If it does, add only missing columns. If not, add to your existing schema file (usually `lib/db.ts` or `db/schema/agent_runs.ts`):
 

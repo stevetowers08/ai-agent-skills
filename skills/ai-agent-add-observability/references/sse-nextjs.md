@@ -1,4 +1,4 @@
-# SSE Live Event Feed — Next.js App Router
+# SSE Live Event Feed - Next.js App Router
 
 ## Event bus singleton
 
@@ -48,7 +48,7 @@ export async function GET(): Promise<Response> {
       eventBus.on('event', _send)
     },
     cancel() {
-      // Runs when the client disconnects — start()'s return value is NOT used by ReadableStream
+      // Runs when the client disconnects - start()'s return value is NOT used by ReadableStream
       if (_send) eventBus.off('event', _send)
       if (_heartbeat) clearInterval(_heartbeat)
     },

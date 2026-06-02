@@ -1,6 +1,6 @@
 ---
 name: ai-agent-self-improving
-description: Add self-improvement to any AI agent — learning capture, promotion to memory, and a performance observer that watches external signals and injects insights back into the agent. Use when the user wants an agent that gets better over time, wants to wire up a feedback loop, wants to track what the agent learned, wants a performance observer, or says anything like "make the agent learn", "agent that improves", "feedback loop for my agent", "track agent performance", "agent that adapts based on results". Works for any domain — sales, content, support, outreach, analysis.
+description: Add self-improvement to any AI agent - learning capture, promotion to memory, and a performance observer that watches external signals and injects insights back into the agent. Use when the user wants an agent that gets better over time, wants to wire up a feedback loop, wants to track what the agent learned, wants a performance observer, or says anything like "make the agent learn", "agent that improves", "feedback loop for my agent", "track agent performance", "agent that adapts based on results". Works for any domain - sales, content, support, outreach, analysis.
 ---
 
 # ai-agent-self-improving
@@ -9,16 +9,16 @@ Two mechanisms, one skill. Use one or both depending on what the agent does:
 
 | Pattern | When to use |
 |---|---|
-| **Learning Capture** | Any agent — logs corrections, errors, discoveries, and promotes recurring patterns to permanent memory |
-| **Performance Observer** | Agents whose outputs produce measurable real-world results — watches an external signal, generates insights, injects them at generation time |
+| **Learning Capture** | Any agent - logs corrections, errors, discoveries, and promotes recurring patterns to permanent memory |
+| **Performance Observer** | Agents whose outputs produce measurable real-world results - watches an external signal, generates insights, injects them at generation time |
 
 Ask the user: "Does this agent produce outputs you can measure externally (e.g. emails that get replies, posts that get engagement, calls that convert, recommendations that get accepted)?" If yes, add both. If no, just Learning Capture.
 
 ---
 
-## Pattern 1 — Learning Capture
+## Pattern 1 - Learning Capture
 
-### Step 1 — Initialise `.learnings/`
+### Step 1 - Initialise `.learnings/`
 
 Check if `.learnings/` exists in the agent's directory. If not, create it:
 
@@ -58,7 +58,7 @@ Capabilities the agent tried to use but doesn't have yet.
 ---
 ```
 
-### Step 2 — Entry format
+### Step 2 - Entry format
 
 **Learning entry** (`LEARNINGS.md`):
 ```markdown
@@ -134,7 +134,7 @@ How it could be added.
 ---
 ```
 
-### Step 3 — When to log
+### Step 3 - When to log
 
 Log automatically when:
 
@@ -150,7 +150,7 @@ Log automatically when:
 
 **Deduplication:** Before creating a new entry, search for an existing `Pattern-Key` match. If found, increment `Recurrence-Count` and update `Last-Seen`. Do not create a duplicate.
 
-### Step 4 — Promotion rules
+### Step 4 - Promotion rules
 
 Promote a learning to permanent agent memory when **all three** are true:
 - `Recurrence-Count >= 3`
@@ -171,7 +171,7 @@ Promote a learning to permanent agent memory when **all three** are true:
 2. Add to the appropriate section in the target file
 3. Update the original entry: `Status: promoted`, add `Promoted: SOUL.md` (or target file)
 
-**Example — before promotion (LEARNINGS.md):**
+**Example - before promotion (LEARNINGS.md):**
 ```markdown
 ## [LRN-20260601-003] best_practice
 Pattern-Key: crm-reply-delay
@@ -184,12 +184,12 @@ Waiting 24h before following up a cold email doubles reply rate vs same-day foll
 **After promotion (SOUL.md addition):**
 ```markdown
 ## Timing rules
-- Never follow up a cold email within 24 hours — reply rate doubles with a 24h wait minimum.
+- Never follow up a cold email within 24 hours - reply rate doubles with a 24h wait minimum.
 ```
 
 ---
 
-## Pattern 2 — Performance Observer
+## Pattern 2 - Performance Observer
 
 A small scheduled agent that watches an external performance signal, generates a structured insight summary, and injects it into the main agent at generation time. Not tied to any specific domain.
 
@@ -206,15 +206,15 @@ Engagement metrics        → stored in DB
 
 The observer is a **separate scheduled process** - not inline with the main agent. It runs on a cadence matched to how fast your signal changes (weekly for content, daily for sales, hourly for support queues).
 
-### Step 1 — Define the signal
+### Step 1 - Define the signal
 
 Ask the user:
 1. **What is the external signal?** (e.g. email reply rate, CRM stage conversion, post engagement, support CSAT, call-to-meeting rate)
 2. **Where does the data live?** (database table, API, CSV, webhook)
-3. **What's the right cadence?** (how long before patterns become visible — days for content, hours for sales/support)
-4. **What volume?** (how many data points are needed for a pattern to be meaningful — suggest minimum 5-10 for a first run)
+3. **What's the right cadence?** (how long before patterns become visible - days for content, hours for sales/support)
+4. **What volume?** (how many data points are needed for a pattern to be meaningful - suggest minimum 5-10 for a first run)
 
-### Step 2 — Build the observer
+### Step 2 - Build the observer
 
 Create `src/agents/<name>/observer.ts` (or `observer.py`):
 
@@ -228,7 +228,7 @@ async function fetchSignalData(): Promise<PerformanceRecord[]> {
   // Example: { id, emailSubject, body, replyReceived, replyRate, sentAt }
 }
 
-// 2. Score records — define what "good" looks like for your domain
+// 2. Score records - define what "good" looks like for your domain
 function score(record: PerformanceRecord): number {
   // Return a single numeric score per record
   // Sales: conversion score (0-1), Content: engagement score, Support: resolution time (inverted)
@@ -249,7 +249,7 @@ export async function generateInsights(): Promise<string> {
 
   const client = createAnthropicClient()
   const response = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001', // cheap — runs on a schedule
+    model: 'claude-haiku-4-5-20251001', // cheap - runs on a schedule
     max_tokens: 600,
     messages: [{
       role: 'user',
@@ -266,7 +266,7 @@ Write a concise insight summary in this format:
 ## Performance Insights
 
 ### What's working
-- [2-3 specific patterns from top performers — be concrete, not generic]
+- [2-3 specific patterns from top performers - be concrete, not generic]
 
 ### What's not working  
 - [2-3 specific patterns from lower performers]
@@ -285,17 +285,17 @@ Base observations on actual patterns in the data, not general advice.`,
 }
 
 function formatRecord(r: PerformanceRecord & { score: number }): string {
-  // Format one record for Claude — include the key fields that distinguish outputs
+  // Format one record for Claude - include the key fields that distinguish outputs
   // Show enough context for Claude to spot the pattern
   return `Score ${r.score.toFixed(2)}: ${r.output.slice(0, 150)}`
 }
 ```
 
-### Step 3 — Store and retrieve insights
+### Step 3 - Store and retrieve insights
 
 Store insights in your persistent layer (DB or file). Two options:
 
-**Option A — DB (recommended for production):**
+**Option A - DB (recommended for production):**
 ```typescript
 // Upsert to agentMemories or equivalent key-value store
 await db.insert(agentMemories).values({
@@ -308,7 +308,7 @@ await db.insert(agentMemories).values({
 // On conflict: update content + updatedAt
 ```
 
-**Option B — File (simpler, works locally):**
+**Option B - File (simpler, works locally):**
 ```
 agents/<name>/PERFORMANCE_INSIGHTS.md
 ```
@@ -317,23 +317,23 @@ Write on each observer run, overwrite previous.
 **Retrieval at generation time:**
 ```typescript
 async function getInsights(): Promise<string | null> {
-  // Read from DB or file — return null if not generated yet
+  // Read from DB or file - return null if not generated yet
   // Fail silently: if insights aren't available, proceed without them
 }
 ```
 
-### Step 4 — Inject at generation time
+### Step 4 - Inject at generation time
 
-In the main agent's generation function, inject insights into the **volatile tier** — after the stable tier (SOUL.md + TOOLS.md) but before the task. This preserves the Anthropic prompt cache prefix on the stable content:
+In the main agent's generation function, inject insights into the **volatile tier** - after the stable tier (SOUL.md + TOOLS.md) but before the task. This preserves the Anthropic prompt cache prefix on the stable content:
 
 ```typescript
-// Fetch insights once per run — memoize if the agent calls generateText multiple times
+// Fetch insights once per run - memoize if the agent calls generateText multiple times
 const insights = await getInsights().catch(() => null)
 
 // Correct tier order for Anthropic prompt caching:
-// [SOUL.md + TOOLS.md] (stable — cached) | [insights + memory] (volatile — fresh each run)
+// [SOUL.md + TOOLS.md] (stable - cached) | [insights + memory] (volatile - fresh each run)
 const systemPrompt = [
-  stableSystemPrompt,  // SOUL.md + TOOLS.md — loaded at module start, stays at top
+  stableSystemPrompt,  // SOUL.md + TOOLS.md - loaded at module start, stays at top
   insights ? `## Current Performance Insights\n${insights}` : '',
   memory,              // MEMORY.md content
 ].filter(Boolean).join('\n\n')
@@ -343,7 +343,7 @@ Keep injection lightweight - the insights summary should be under 400 words. Cla
 
 **Grounding rule (from Reflexion pattern):** The insights should cite specific examples from the data, not just generic advice. "Emails under 100 words with a specific question at the end get 3x more replies than longer emails" is grounded. "Keep emails concise" is not.
 
-### Step 5 — Wire the schedule
+### Step 5 - Wire the schedule
 
 Add the observer as a cron job:
 
@@ -363,7 +363,7 @@ Suggested cadence:
 - **Support agents** (tickets, chat): every 4-6 hours - resolution data is immediate
 - **Recommendation agents**: weekly - enough volume needed
 
-### Step 6 — Verify the loop is working
+### Step 6 - Verify the loop is working
 
 After the first few observer runs, check:
 
@@ -379,8 +379,8 @@ If insights are too generic, reduce the data window (fewer records, more recent)
 
 For agents with measurable outputs, run both:
 
-1. **Learning Capture** handles corrections, tool errors, prompt drift — things that happen during runs
-2. **Performance Observer** handles outcome quality — whether the agent's outputs are actually working in the real world
+1. **Learning Capture** handles corrections, tool errors, prompt drift - things that happen during runs
+2. **Performance Observer** handles outcome quality - whether the agent's outputs are actually working in the real world
 
 They feed different parts of the agent:
 - Learnings → `SOUL.md` / `TOOLS.md` (permanent identity and tool knowledge)
@@ -391,6 +391,6 @@ They feed different parts of the agent:
 ## Next skills
 
 After setting this up:
-- `/ai-agent-compact-memory` — keep MEMORY.md and LEARNINGS.md from bloating
-- `/ai-agent-create-evals` — build a golden-trace harness to catch regressions
-- `/ai-agent-debug-run` — diagnose when a run goes wrong
+- `/ai-agent-compact-memory` - keep MEMORY.md and LEARNINGS.md from bloating
+- `/ai-agent-create-evals` - build a golden-trace harness to catch regressions
+- `/ai-agent-debug-run` - diagnose when a run goes wrong

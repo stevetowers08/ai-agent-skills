@@ -1,4 +1,4 @@
-# Scheduling Tables — Drizzle ORM
+# Scheduling Tables - Drizzle ORM
 
 ```typescript
 import { pgTable, text, integer } from 'drizzle-orm/pg-core'

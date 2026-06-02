@@ -5,7 +5,7 @@ description: Diagnose and fix a failing or misbehaving AI agent by reading run t
 
 # ai-agent-debug-run
 
-Diagnose why an agent failed or misbehaved. This skill reads traces and logs before touching any code — the Iron Law of agent debugging is: identify root cause first, fix second. No guessing.
+Diagnose why an agent failed or misbehaved. This skill reads traces and logs before touching any code - the Iron Law of agent debugging is: identify root cause first, fix second. No guessing.
 
 ## Failure categories
 
@@ -22,19 +22,19 @@ The fix depends entirely on which failure category applies. Read the evidence be
 | Schema mismatch | Tool input doesn't match Zod schema | Fix schema or calling code |
 | Cost abort | Run hit token budget and stopped | Increase budget or split into smaller runs |
 
-## Step 1 — Read the evidence
+## Step 1 - Read the evidence
 
 Do all of these before forming a hypothesis:
 
-1. Read `agents/<name>/.learnings/ERRORS.md` — has this happened before?
-2. Read the last 5 entries in `activity-log.json` (or `agent_runs` table) for this agent — look at `status`, `errorMsg`, `tokensIn`, `tokensOut`, `actionTaken`
-3. If OTel tracing is set up, look at the span tree for the failing run — which span failed and what was its `status`?
-4. Read `agents/<name>/SOUL.md` — what is the agent supposed to do?
-5. Read `agents/<name>/TOOLS.md` — what are the declared tools and their known issues?
+1. Read `agents/<name>/.learnings/ERRORS.md` - has this happened before?
+2. Read the last 5 entries in `activity-log.json` (or `agent_runs` table) for this agent - look at `status`, `errorMsg`, `tokensIn`, `tokensOut`, `actionTaken`
+3. If OTel tracing is set up, look at the span tree for the failing run - which span failed and what was its `status`?
+4. Read `agents/<name>/SOUL.md` - what is the agent supposed to do?
+5. Read `agents/<name>/TOOLS.md` - what are the declared tools and their known issues?
 
-## Step 2 — Identify the failure category
+## Step 2 - Identify the failure category
 
-Match the evidence to one of the categories in the table above. State the category explicitly before proposing any fix. If the evidence is ambiguous, say so — do not guess.
+Match the evidence to one of the categories in the table above. State the category explicitly before proposing any fix. If the evidence is ambiguous, say so - do not guess.
 
 **Context overflow check:**
 ```typescript
@@ -51,23 +51,23 @@ const CONTEXT_LIMITS = {
 
 **Prompt drift check:** Compare the agent's `SOUL.md` behavioral rules to `actionTaken` in recent run logs. If the action doesn't match the stated role, the prompt is drifting.
 
-## Step 3 — Apply the targeted fix
+## Step 3 - Apply the targeted fix
 
 Apply exactly one fix per identified root cause. Do not refactor surrounding code.
 
-**Bad tool call — fix tool description:**
+**Bad tool call - fix tool description:**
 Edit the tool's `description` in the agent's tool registry. Make it unambiguous: say what the tool does AND what it should NOT be used for.
 
-**Bad tool call — fix Zod schema:**
+**Bad tool call - fix Zod schema:**
 Edit the schema to match what the LLM should provide. Add `.describe()` to every field.
 
-**Context overflow — prune memory:**
+**Context overflow - prune memory:**
 Read `agents/<name>/MEMORY.md`. Remove stale entries. If > 800 tokens, compact: keep only current context, open decisions, and known constraints.
 
-**Prompt drift — tighten SOUL.md:**
+**Prompt drift - tighten SOUL.md:**
 Add a specific behavioral rule that addresses the observed drift. Example: "Do not send any message to external services unless the task explicitly requests it."
 
-**Retry storm — cap steps or add result check:**
+**Retry storm - cap steps or add result check:**
 ```typescript
 // In the agent loop, after tool call:
 const seenArgs = new Set<string>()
@@ -78,10 +78,10 @@ seenArgs.add(argKey)
 ```
 Or reduce `maxSteps`.
 
-**Tool error (external) — add retry:**
+**Tool error (external) - add retry:**
 Wrap the tool's `execute()` with exponential backoff (see `ai-agent-create-workflow` for the `withRetry` helper).
 
-## Step 4 — Log the finding
+## Step 4 - Log the finding
 
 Append to `agents/<name>/.learnings/ERRORS.md`:
 
@@ -97,7 +97,7 @@ Status: resolved
 
 If the same Pattern-Key already exists in ERRORS.md, update it instead of adding a duplicate.
 
-## Step 5 — Verify
+## Step 5 - Verify
 
 After applying the fix, tell the user exactly how to re-run the agent and what to look for:
 - Which field in `agent_runs` confirms the fix worked (e.g. `status = 'success'`, `tokensIn` within budget)

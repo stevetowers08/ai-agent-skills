@@ -1,6 +1,6 @@
 ---
 name: ai-agent-compact-memory
-description: Update, deduplicate, and compact an agent's memory files — MEMORY.md, daily snapshots, LEARNINGS.md — and promote durable learnings to SOUL.md, TOOLS.md, or global CLAUDE.md based on recurrence and scope. Use when an agent's memory is getting too long, after a series of runs, to clean up stale memory, to promote a learning to a permanent rule, or to prep memory for a new phase of work. Triggers on: "compact agent memory", "agent memory is too long", "update agent memory", "save what the agent learned", "promote this to a rule", "clean up agent memory", "memory is full".
+description: Update, deduplicate, and compact an agent's memory files - MEMORY.md, daily snapshots, LEARNINGS.md - and promote durable learnings to SOUL.md, TOOLS.md, or global CLAUDE.md based on recurrence and scope. Use when an agent's memory is getting too long, after a series of runs, to clean up stale memory, to promote a learning to a permanent rule, or to prep memory for a new phase of work. Triggers on: "compact agent memory", "agent memory is too long", "update agent memory", "save what the agent learned", "promote this to a rule", "clean up agent memory", "memory is full".
 ---
 
 # ai-agent-compact-memory
@@ -20,7 +20,7 @@ agents/<name>/TOOLS.md           ← permanent tool gotchas
 ~/.claude/CLAUDE.md              ← global rules (cross-project)
 ```
 
-## Step 1 — Identify the agent
+## Step 1 - Identify the agent
 
 Ask which agent to compact if not clear from context. Read:
 - `agents/<name>/MEMORY.md`
@@ -29,7 +29,7 @@ Ask which agent to compact if not clear from context. Read:
 - `agents/<name>/SOUL.md`
 - `agents/<name>/TOOLS.md`
 
-## Step 2 — Compact MEMORY.md
+## Step 2 - Compact MEMORY.md
 
 MEMORY.md must stay under 800 tokens (~2,200 characters). If it's over:
 
@@ -40,7 +40,7 @@ MEMORY.md must stay under 800 tokens (~2,200 characters). If it's over:
 
 Write the compacted version back to `agents/<name>/MEMORY.md`.
 
-## Step 3 — Promote learnings to permanent homes
+## Step 3 - Promote learnings to permanent homes
 
 Read through `.learnings/LEARNINGS.md`. For each entry, apply the promotion rule:
 
@@ -61,7 +61,7 @@ Promoted format in SOUL.md:
 
 Promoted format in TOOLS.md:
 ```markdown
-## <tool_name> — Known behavior
+## <tool_name> - Known behavior
 - <gotcha> <!-- promoted YYYY-MM-DD -->
 ```
 
@@ -76,14 +76,14 @@ Status: promoted → SOUL.md <!-- or TOOLS.md or CLAUDE.md -->
 Promoted: <date>
 ```
 
-Do not delete promoted entries — they serve as the audit trail.
+Do not delete promoted entries - they serve as the audit trail.
 
-## Step 4 — Create the next daily snapshot
+## Step 4 - Create the next daily snapshot
 
 Write `agents/<name>/memory/YYYY-MM-DD.md` (today's date) seeded with the compacted MEMORY.md state:
 
 ```markdown
-# <Name> Agent — Memory Snapshot <date>
+# <Name> Agent - Memory Snapshot <date>
 
 ## Carried from previous session
 <!-- paste compacted MEMORY.md content -->
@@ -92,7 +92,7 @@ Write `agents/<name>/memory/YYYY-MM-DD.md` (today's date) seeded with the compac
 <!-- leave blank for the agent to fill during its next run -->
 ```
 
-## Step 5 — Summarise
+## Step 5 - Summarise
 
 Tell the user:
 - How many tokens MEMORY.md was reduced to
