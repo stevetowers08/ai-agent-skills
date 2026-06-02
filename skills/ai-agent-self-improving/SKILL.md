@@ -324,14 +324,18 @@ async function getInsights(): Promise<string | null> {
 
 ### Step 4 — Inject at generation time
 
-In the main agent's generation function, prepend insights before the user prompt:
+In the main agent's generation function, inject insights into the **volatile tier** — after the stable tier (SOUL.md + TOOLS.md) but before the task. This preserves the Anthropic prompt cache prefix on the stable content:
 
 ```typescript
+// Fetch insights once per run — memoize if the agent calls generateText multiple times
 const insights = await getInsights().catch(() => null)
 
+// Correct tier order for Anthropic prompt caching:
+// [SOUL.md + TOOLS.md] (stable — cached) | [insights + memory] (volatile — fresh each run)
 const systemPrompt = [
-  agentSystemPrompt,
+  stableSystemPrompt,  // SOUL.md + TOOLS.md — loaded at module start, stays at top
   insights ? `## Current Performance Insights\n${insights}` : '',
+  memory,              // MEMORY.md content
 ].filter(Boolean).join('\n\n')
 ```
 

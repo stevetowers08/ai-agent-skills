@@ -27,6 +27,7 @@ Read `package.json` and any existing schema files before writing the run-trace t
 | `drizzle-orm` | `references/db-drizzle.md` |
 | `@prisma/client` | `references/db-prisma.md` |
 | `pg` or `postgres` (no ORM) | `references/db-raw-sql.md` |
+| `@supabase/supabase-js` | `references/db-raw-sql.md` (Supabase uses Postgres — adapt pool to supabase client) |
 | `mysql2` (no ORM) | `references/db-raw-sql.md` (adapt syntax) |
 | `better-sqlite3` | `references/db-raw-sql.md` (adapt syntax) |
 | None | Ask: "What database are you using, or should I skip the run-trace table?" |
@@ -138,7 +139,10 @@ const STABLE_SYSTEM = `${soul}\n\n${toolsDocs}`
 
 function loadMemory(): string {
   try { return readFileSync(join(process.cwd(), `agents/${AGENT_NAME}/MEMORY.md`), 'utf-8') }
-  catch { return '' }
+  catch {
+    console.warn(`[${AGENT_NAME}] MEMORY.md not found — running without memory context`)
+    return ''
+  }
 }
 
 export async function run<TInput>(input: TInput): Promise<string> {
@@ -166,11 +170,40 @@ export async function run<TInput>(input: TInput): Promise<string> {
 }
 ```
 
-## Step 5 — Write the run-trace schema
+## Step 5 — Write the run-trace schema and wire it
 
-Read the reference file detected in Step 2 for the exact schema and `withRunLogging` helper to match the project's database.
+Read the reference file detected in Step 2 for the exact schema and `withRunLogging` helper.
 
-Wrap the `run()` function with `withRunLogging` so every execution is logged with status, duration, token counts, and cost.
+The reference file shows both the schema and a call example. Generate them as a single integrated file — do not leave the wiring as two separate disconnected blocks. The final `index.ts` should compile and run without manual stitching.
+
+The `run()` export should be wrapped at the call site so token counts and cost are written on every successful run:
+
+```typescript
+// In src/agents/<name>/index.ts — the wired version
+export async function run<TInput>(input: TInput): Promise<string> {
+  return withRunLogging(AGENT_NAME, async (_runId) => {
+    const memory = loadMemory()
+    const system = `${STABLE_SYSTEM}\n\n## Memory\n${memory}`
+
+    const result = await generateText({
+      model: anthropic(MODEL),
+      system,
+      prompt: JSON.stringify(input),
+      maxTokens: TOKEN_BUDGET,
+      tools: { /* real tools from TOOLS.md — no no-op placeholders */ },
+      maxSteps: 10,
+    })
+
+    return {
+      result: result.text,
+      usage: {
+        tokensIn: result.usage.promptTokens,
+        tokensOut: result.usage.completionTokens,
+        costUsd: calcCost(MODEL, result.usage),
+      },
+    }
+  })
+}
 
 ## Step 6 — Summarise
 

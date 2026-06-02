@@ -7,9 +7,18 @@ description: Scaffold a supervisor + worker agent team with delegation protocol,
 
 Scaffold a supervisor-worker agent team. The supervisor receives a task and delegates subtasks to specialist workers. Each agent gets its own identity and memory. Spans nest so the full team trace is visible in one tree.
 
-## Stack assumptions
+## Step 0 — Detect the stack
 
-Same as `ai-agent-create-solo`. Workers are individual agents; the supervisor is an agent with a `delegate_task` tool that invokes them.
+Read `package.json` before writing any code — same detection as `ai-agent-create-solo`.
+
+| Found in `package.json` | Use |
+|---|---|
+| `drizzle-orm` | Drizzle for `logRun` queries |
+| `@prisma/client` | Prisma singleton (`import { prisma } from '@/lib/prisma'`) |
+| `pg`, `postgres`, or `@supabase/supabase-js` | Raw SQL / pg pool |
+| None | Ask before generating any DB code |
+
+Confirm in one line: "Detected Drizzle + Next.js — generating supervisor to match."
 
 ## Step 1 — Gather inputs
 
@@ -60,7 +69,11 @@ For each agent (supervisor + each worker), write `agents/<team>/<agent_name>/SOU
 import { generateText, tool } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { z } from 'zod'
+import { randomUUID } from 'crypto'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 import { trace, context, SpanStatusCode } from '@opentelemetry/api'
+import type { Span } from '@opentelemetry/api'
 import { run as runWorker1 } from './<worker_1>'
 import { run as runWorker2 } from './<worker_2>'
 import { logRun } from '@/lib/agent-runs'
@@ -68,18 +81,25 @@ import { logRun } from '@/lib/agent-runs'
 const AGENT_NAME = '<team>_supervisor'
 const tracer = trace.getTracer(AGENT_NAME)
 
-// Worker registry — add entries for each worker
-const WORKERS: Record<string, (task: string, parentSpan?: Span) => Promise<string>> = {
-  '<worker_1>': (task, span) => runWorker1({ task }, span),
-  '<worker_2>': (task, span) => runWorker2({ task }, span),
+// Stable tier — read once at module load, cache-warm across runs
+const soul = readFileSync(join(process.cwd(), `agents/<team>/supervisor/SOUL.md`), 'utf-8')
+const toolsDocs = readFileSync(join(process.cwd(), `agents/<team>/supervisor/TOOLS.md`), 'utf-8')
+const STABLE_SYSTEM = `${soul}\n\n${toolsDocs}`
+
+// Worker registry — workers accept only the task string; OTel context propagates via context.with()
+const WORKERS: Record<string, (task: string) => Promise<string>> = {
+  '<worker_1>': (task) => runWorker1({ task }),
+  '<worker_2>': (task) => runWorker2({ task }),
 }
 
 export async function run(input: { task: string }): Promise<string> {
+  const teamRunId = randomUUID() // stable ID — correlates all spans in this team run
+
   return tracer.startActiveSpan(`${AGENT_NAME}.run`, async (rootSpan) => {
     rootSpan.setAttributes({
       'agent.name': AGENT_NAME,
       'entity.type': 'agent',
-      'conversation.id': input.task.slice(0, 40),
+      'team.run_id': teamRunId,
     })
 
     const runId = await logRun.start(AGENT_NAME)
@@ -87,7 +107,7 @@ export async function run(input: { task: string }): Promise<string> {
     try {
       const result = await generateText({
         model: anthropic('<model>'),
-        system: loadSoul(AGENT_NAME),
+        system: STABLE_SYSTEM,
         prompt: input.task,
         tools: {
           delegate_task: tool({
@@ -97,13 +117,17 @@ export async function run(input: { task: string }): Promise<string> {
               task: z.string().describe('The specific subtask for this worker, with full context'),
             }),
             execute: async ({ worker, task }) => {
-              // Child span nests under supervisor root span
               return tracer.startActiveSpan(`delegate.${worker}`, async (childSpan) => {
-                childSpan.setAttributes({ 'agent.name': worker, 'entity.type': 'agent' })
+                childSpan.setAttributes({ 'agent.name': worker, 'team.run_id': teamRunId })
                 try {
                   const workerFn = WORKERS[worker]
                   if (!workerFn) throw new Error(`Unknown worker: ${worker}`)
-                  const result = await workerFn(task, childSpan)
+                  // context.with() propagates the active span into the worker call —
+                  // worker's internal spans nest automatically without passing a Span object
+                  const result = await context.with(
+                    trace.setSpan(context.active(), childSpan),
+                    () => workerFn(task)
+                  )
                   childSpan.setStatus({ code: SpanStatusCode.OK })
                   return result
                 } catch (err) {
@@ -137,8 +161,8 @@ export async function run(input: { task: string }): Promise<string> {
 ## Step 4 — Write each worker
 
 `src/agents/<team>/<worker_name>.ts` — use the same structure as `ai-agent-create-solo` but:
-- The worker's `run()` function accepts `(input: { task: string }, parentSpan?: Span)` 
-- It creates a child span under `parentSpan` if provided, so traces nest correctly
+- The worker's `run()` function accepts `(input: { task: string })` — no Span parameter needed
+- OTel context propagates automatically via `context.with()` in the supervisor — worker spans nest correctly without passing a Span object across call boundaries
 - Workers do not write to `agent_runs` directly — the supervisor owns the run record
 
 ## Step 5 — Write `AGENTS.md` escalation rules
@@ -161,3 +185,38 @@ Print the file tree. Tell the user:
 - How to invoke: `import { run } from '@/agents/<team>/supervisor'; await run({ task: '...' })`
 - That worker spans will nest under the supervisor in any OTel-compatible trace viewer
 - Next steps: `/ai-agent-add-observability` to configure the trace exporter, `/ai-agent-create-evals` to test delegation routing
+
+## Step 7 — Optional: team management UI
+
+Ask once: "Do you want a developer dashboard for this team? It adds a topology view, MCP server setup, and agent config panel."
+
+If yes:
+
+### Pages to generate
+
+**`/team`** — topology canvas
+- Install `reactflow` if not present
+- ReactFlow graph: supervisor node + worker nodes, directed delegation edges
+- Each node: agent name, role badge, status dot (idle/busy/error/offline), last-run timestamp
+- Click a node: sidebar with agent detail (model, tools enabled, recent runs)
+- Auto-refresh every 10s via `useInterval` polling `/api/team/agents`; pause when tab is hidden
+
+**`/team/mcps`** — MCP server setup
+- Table of registered MCP servers: name, command, env var keys (values masked), status, last-tested
+- "Add server" form: name, command (e.g. `npx -y @modelcontextprotocol/server-memory`), key-value env var repeater
+- "Test" button per row — POSTs to `/api/team/mcps/[id]/test`, spawns the command as a child process with 5s timeout, shows success/error inline
+- Env var values are write-only in the UI; warn the developer to move secrets to a secrets manager before production
+
+### API routes
+
+| Method | Route | What it does |
+|---|---|---|
+| GET | `/api/team/agents` | Returns `Agent[]` from AGENTS.md + heartbeat overlay |
+| GET | `/api/team/mcps` | Reads `.agent-team.json` store |
+| POST | `/api/team/mcps` | Validates with Zod, persists to store |
+| DELETE | `/api/team/mcps/[id]` | Removes from store, returns 204 |
+| POST | `/api/team/mcps/[id]/test` | Child process spawn with 5s timeout |
+
+**File-backed store:** `.agent-team.json` at project root (add to `.gitignore`). Export `readStore()` and `writeStore(data)` from `lib/team/store.ts`.
+
+**Agent status detection:** check for heartbeat files in `.agent-heartbeats/<agentId>` — content is `{ status, lastRunAt }`. Return `status: 'offline'` for any agent with no heartbeat file; developer wires their agent loop to write these.

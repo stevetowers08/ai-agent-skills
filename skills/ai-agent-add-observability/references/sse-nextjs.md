@@ -32,17 +32,25 @@ import type { AgentEvent } from '@/lib/event-bus'
 export const dynamic = 'force-dynamic'
 
 export async function GET(): Promise<Response> {
+  // Capture refs in outer scope so cancel() can reach them
+  let _send: ((e: AgentEvent) => void) | null = null
+  let _heartbeat: ReturnType<typeof setInterval> | null = null
+
   const stream = new ReadableStream({
     start(controller) {
       const enc = new TextEncoder()
-      const send = (e: AgentEvent) =>
+      _send = (e: AgentEvent) =>
         controller.enqueue(enc.encode(`data: ${JSON.stringify(e)}\n\n`))
-      const heartbeat = setInterval(
+      _heartbeat = setInterval(
         () => controller.enqueue(enc.encode(': heartbeat\n\n')),
         30_000
       )
-      eventBus.on('event', send)
-      return () => { eventBus.off('event', send); clearInterval(heartbeat) }
+      eventBus.on('event', _send)
+    },
+    cancel() {
+      // Runs when the client disconnects — start()'s return value is NOT used by ReadableStream
+      if (_send) eventBus.off('event', _send)
+      if (_heartbeat) clearInterval(_heartbeat)
     },
   })
   return new Response(stream, {

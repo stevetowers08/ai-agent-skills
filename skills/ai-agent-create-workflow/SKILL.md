@@ -15,7 +15,8 @@ Read `package.json` and existing schema files before writing any database code.
 |---|---|
 | `drizzle-orm` | `references/db-drizzle.md` |
 | `@prisma/client` | `references/db-prisma.md` |
-| `pg`, `mysql2`, or `better-sqlite3` | `references/db-raw-sql.md` |
+| `pg`, `postgres`, `mysql2`, or `better-sqlite3` | `references/db-raw-sql.md` |
+| `@supabase/supabase-js` | `references/db-raw-sql.md` (Supabase uses Postgres — adapt pool to supabase client) |
 | None | Ask: "What database are you using?" |
 
 Also detect framework (`next`, `express`, `fastify`) for the trigger endpoint pattern.
@@ -184,7 +185,7 @@ await db.insert(routines).values({
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { routines, routineRuns } from '@/db/schema/routines'
-import { eq } from 'drizzle-orm'
+import { eq, and } from 'drizzle-orm'
 import { run } from '@/workflows/<name>'
 import { randomUUID } from 'crypto'
 
@@ -201,6 +202,7 @@ export async function POST(req: Request) {
     const activeRun = await db.query.routineRuns.findFirst({
       where: and(eq(routineRuns.routineId, routine.id), eq(routineRuns.status, 'running')),
     })
+
     if (activeRun) return NextResponse.json({ skipped: 'active_run_exists' }, { status: 200 })
   }
 
@@ -213,8 +215,11 @@ export async function POST(req: Request) {
     dispatchFingerprint: req.headers.get('x-dispatch-fingerprint') ?? runId,
   })
 
-  // Run async — don't await so the response returns immediately
-  run({}).then(async () => {
+  // Run async — don't await so the 202 returns immediately
+  // On Vercel: replace with `waitUntil(run(...))` from `@vercel/functions` — plain floating
+  // promises are killed when the serverless function freezes after the Response is returned.
+  const body = await req.json().catch(() => ({}))
+  run(body).then(async () => {
     await db.update(routineRuns)
       .set({ status: 'success', completedAt: new Date() })
       .where(eq(routineRuns.id, runId))

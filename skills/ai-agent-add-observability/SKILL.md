@@ -63,7 +63,7 @@ import { NodeSDK } from '@opentelemetry/sdk-node'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base'
 import { Resource } from '@opentelemetry/resources'
-import { SEMRESATTRS_SERVICE_NAME } from '@opentelemetry/semantic-conventions'
+import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions'
 
 let sdk: NodeSDK | null = null
 
@@ -76,7 +76,7 @@ export function initTracing(serviceName: string): void {
       : undefined,
   })
   sdk = new NodeSDK({
-    resource: new Resource({ [SEMRESATTRS_SERVICE_NAME]: serviceName }),
+    resource: new Resource({ [ATTR_SERVICE_NAME]: serviceName }),
     spanProcessors: [new BatchSpanProcessor(exporter)],
   })
   sdk.start()
@@ -107,6 +107,8 @@ A lightweight pub/sub bus that lets a dashboard subscribe to agent events in rea
 
 The event bus emits typed events: `run.started`, `run.completed`, `run.errored`, `tool.called`, `tool.returned`. The SSE route keeps the connection alive with 30-second heartbeats.
 
+> **Multi-process warning:** The in-process `EventEmitter` only works in single-process deployments. In serverless environments (Vercel, Lambda) or horizontally-scaled deployments (multiple Next.js instances), each process has its own isolated bus and events do not cross processes. For those environments, replace the EventEmitter with a Redis pub/sub channel (`ioredis`) or Supabase Realtime subscription and fan out to connected SSE clients from there.
+
 ## Step 3 — Cost tracking
 
 Add this helper. Rates are mid-2026 — update if models change:
@@ -120,7 +122,10 @@ const COST_PER_TOKEN: Record<string, { input: number; output: number }> = {
 
 export function calcCost(model: string, usage: { promptTokens: number; completionTokens: number }): number {
   const rates = COST_PER_TOKEN[model]
-  if (!rates) return 0
+  if (!rates) {
+    console.warn(`[calcCost] Unknown model '${model}' — cost tracking disabled for this run`)
+    return 0
+  }
   return usage.promptTokens * rates.input + usage.completionTokens * rates.output
 }
 ```

@@ -29,19 +29,46 @@ import { db } from '@/lib/db'
 import { agentRuns } from '@/lib/db'
 import { eq } from 'drizzle-orm'
 
+type RunUsage = { tokensIn?: number; tokensOut?: number; costUsd?: number }
+
 export async function withRunLogging<T>(
   agentName: string,
-  fn: (runId: string) => Promise<T>
+  fn: (runId: string) => Promise<{ result: T; usage?: RunUsage }>,
 ): Promise<T> {
   const id = crypto.randomUUID()
   await db.insert(agentRuns).values({ id, agentName, status: 'running', startedAt: Date.now(), trigger: 'on_demand' })
   try {
-    const result = await fn(id)
-    await db.update(agentRuns).set({ status: 'success', finishedAt: Date.now() }).where(eq(agentRuns.id, id))
+    const { result, usage } = await fn(id)
+    await db.update(agentRuns)
+      .set({
+        status: 'success',
+        finishedAt: Date.now(),
+        tokensIn: usage?.tokensIn ?? null,
+        tokensOut: usage?.tokensOut ?? null,
+        costUsd: usage?.costUsd ?? null,
+      })
+      .where(eq(agentRuns.id, id))
     return result
   } catch (err) {
-    await db.update(agentRuns).set({ status: 'error', errorMsg: String(err), finishedAt: Date.now() }).where(eq(agentRuns.id, id))
+    await db.update(agentRuns)
+      .set({ status: 'error', errorMsg: String(err), finishedAt: Date.now() })
+      .where(eq(agentRuns.id, id))
     throw err
   }
 }
+```
+
+Call from the agent loop:
+```typescript
+return withRunLogging(AGENT_NAME, async (runId) => {
+  const result = await generateText({ ... })
+  return {
+    result: result.text,
+    usage: {
+      tokensIn: result.usage.promptTokens,
+      tokensOut: result.usage.completionTokens,
+      costUsd: calcCost(MODEL, result.usage),
+    },
+  }
+})
 ```

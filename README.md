@@ -100,6 +100,23 @@ Cost rates are baked in per model so the tracing layer computes `costUsd` on eve
 
 ---
 
+**`/ai-agent-observability-dashboard`** - Add a three-page observability dashboard to any app that runs AI agents, LLM calls, or workflows.
+
+Reads from your existing `agent_runs` database - no external service required. Detects stack first (Next.js App Router/Pages Router, Express+React, Vite SPA, Drizzle/Prisma/raw SQL) then generates three pages and shared components. Run `/ai-agent-add-observability` first if `agent_runs` does not exist yet.
+
+```
+app/agents/page.tsx            # live SSE run feed + stats bar + run list
+app/workflows/page.tsx         # workflow run history + per-step accordion
+app/llm-explorer/page.tsx      # LLM call browser with prompt/response/raw detail
+
+components/observability/
+  ObservabilityNav.tsx         # shared nav: Agents, Workflows, LLM Explorer
+  TraceDrawer.tsx              # shared drawer: span tree, In/Out, Raw
+  RunsTable.tsx
+```
+
+---
+
 **`/ai-agent-debug-run`** - Diagnose a failing agent by category, fix it, log the root cause.
 
 The Iron Law: identify root cause before touching any code. This skill reads run traces and error logs first, then maps the failure to one of eight categories - bad tool call, context overflow, prompt drift, retry storm, tool error (external), suspension not resumed, schema mismatch, cost abort. Each category has a specific fix path.
@@ -158,29 +175,32 @@ Adds `npm run eval:<name>` to package.json so evals run in CI.
 ## Recommended sequence
 
 ```
-/ai-agent-create-solo           # scaffold
-/ai-agent-add-observability     # instrument (once per project)
-                                # run it, collect real traces
-/ai-agent-debug-run             # fix issues using trace evidence
-/ai-agent-self-improving        # add feedback loop
-/ai-agent-compact-memory        # weekly - keep memory from bloating
-/ai-agent-create-evals          # before any breaking change
+/ai-agent-create-solo                  # scaffold
+/ai-agent-add-observability            # instrument (once per project)
+                                       # run it, collect real traces
+/ai-agent-observability-dashboard      # add the 3-page UI to see what's happening
+/ai-agent-debug-run                    # fix issues using trace evidence
+/ai-agent-self-improving               # add feedback loop
+/ai-agent-compact-memory               # weekly - keep memory from bloating
+/ai-agent-create-evals                 # before any breaking change
 ```
 
 For teams:
 
 ```
-/ai-agent-create-team           # supervisor + workers
-/ai-agent-add-observability     # nested trace tree across all agents
-/ai-agent-create-evals          # eval at the supervisor level (input to final output)
+/ai-agent-create-team                  # supervisor + workers (+ optional team UI)
+/ai-agent-add-observability            # nested trace tree across all agents
+/ai-agent-observability-dashboard      # dashboard showing all agent activity
+/ai-agent-create-evals                 # eval at the supervisor level
 ```
 
 For scheduled pipelines:
 
 ```
-/ai-agent-create-workflow       # typed steps, cron trigger, concurrency policy
-/ai-agent-add-observability     # instrument each step as a span
-/ai-agent-self-improving        # performance observer if steps produce measurable outputs
+/ai-agent-create-workflow              # typed steps, cron trigger, concurrency policy
+/ai-agent-add-observability            # instrument each step as a span
+/ai-agent-observability-dashboard      # workflow history + step accordion
+/ai-agent-self-improving               # performance observer if steps produce measurable outputs
 ```
 
 ---
@@ -192,6 +212,7 @@ npx skills add stevetowers08/ai-agent-skills --skill ai-agent-create-solo
 npx skills add stevetowers08/ai-agent-skills --skill ai-agent-create-team
 npx skills add stevetowers08/ai-agent-skills --skill ai-agent-create-workflow
 npx skills add stevetowers08/ai-agent-skills --skill ai-agent-add-observability
+npx skills add stevetowers08/ai-agent-skills --skill ai-agent-observability-dashboard
 npx skills add stevetowers08/ai-agent-skills --skill ai-agent-debug-run
 npx skills add stevetowers08/ai-agent-skills --skill ai-agent-compact-memory
 npx skills add stevetowers08/ai-agent-skills --skill ai-agent-self-improving
